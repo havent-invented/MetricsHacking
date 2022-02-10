@@ -103,8 +103,7 @@ net_enhance = ResNetUNet(3).to(device)
 #nn codec
 #EXEC
 
-save_filename = "vimeo11k_MDTVSFA_DISTS_LPIPS_enhance_cheng2020_attn_quality2"
-
+save_filename = "vimeo11k_LPIPS_enhance_cheng2020_attn_quality2"
 
 
 #net_codec = bmshj2018_factorized(quality=2, pretrained=True).train().to(device)
@@ -119,36 +118,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from piq import LPIPS as piq_LPIPS#PieAPP VSI, FSIM, NLPD, deepIQA
 from piq import DISTS as piq_DISTS
 import IQA_pytorch as iqa#SSIM, GMSD, LPIPSvgg, DISTS
-lpips = iqa.LPIPSvgg().to(device)
-dists = iqa.DISTS().to(device)
-
-def loss_calc(X_out, Y):
-    if X_out['x_hat'].device != Y.device:
-        X_out['x_hat'] = X_out['x_hat'].to(device)
-    
-    loss = rdLoss(X_out, Y)
-    loss['MDTVSFA'] = -metr.MDTVSFA(X_out['x_hat'])
-    loss["DISTS"] = dists(X_out['x_hat'], Y)
-    loss["LPIPS"] = lpips(X_out['x_hat'], Y)
-    lmbda = 1e-2
-    loss["loss"] = loss["LPIPS"] + loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
-    #loss["aux_loss"] = net_codec.aux_loss()
-    return loss
-
-class Video_reader_read():
-    def __init__(self,name1 = dst_dir + "blue_hair_1920x1080_30.yuv.Y4M"):
-        self.nameGT = name1
-        
-    def get_frame(self):
-        self.temp_reader1 = skvideo.io.FFmpegReader(self.nameGT, outputdict={"-c:v" :" rawvideo","-f": "rawvideo"})
-        self.datagenGT = [frameGT / 255. for frameGT in self.temp_reader1.nextFrame()]
-        self.temp_reader1.close()
-        self.datagenGT = np.array([[i[:,:,0],i[:,:,1],i[:,:,2]] for i in self.datagenGT])
-        self.lst_1 = torch.tensor(self.datagenGT[0]).float() - 0.5
-        return torch.stack([self.lst_1])
-rd = Video_reader_read()
-def pltimshow(arg):
-    plt.imshow(arg.cpu().detach().numpy().swapaxes(1,3).swapaxes(1,2)[0])
 class calc_met:
     def __init__(self,dataset1 = ["Run439.Y4M"], convKer1 = None, home_dir1 = "R:/", creat_dir = False, calc_SSIM_PSNR = False, calc_model_features = False, model = "vmaf_v063" , codec = '   -preset:v medium -x265-params log-level=error ',dataset_dir = "dataset/"):
         self.device = "cuda:0"
@@ -178,21 +147,8 @@ class calc_met:
             self.relative_score, self.mapped_score, self.aligned_score = self.model.forward([(self.features, input_length, ['K'])])
             y_pred = self.mapped_score[0][0]#.to('cpu').detach().numpy()
         return y_pred
-metr = calc_met()
 
-def pltimshow_batch(args, filename = "vis/tmp.png"):
-    plt.figure(dpi = 800)
-    Ar2 = None
-    for arg in args:
-        Ar1 = np.concatenate([i for i in arg.cpu().detach().numpy().swapaxes(1,3).swapaxes(1,2)], 0)
-        if Ar2 is None:
-            Ar2 = Ar1
-        else:
-            Ar2 = np.concatenate([Ar2,Ar1],1)
-    plt.imshow(Ar2)
-    plt.axis('off')
-    plt.savefig(filename, bbox_inches='tight')
-#X_orig = cheng2020_attn(quality=2, pretrained=True)(X.cpu())
+
 class RateDistortionLoss(nn.Module):
     """Custom rate distortion loss with a Lagrangian parameter."""
     def __init__(self, lmbda=1e-2):
@@ -213,6 +169,60 @@ class RateDistortionLoss(nn.Module):
         out["PSNR"] = 10 * torch.log10(1/ out["mse_loss"])
         out["loss_classic"] = self.lmbda * 255 ** 2 * out["mse_loss"] + out["bpp_loss"]
         return out
+
+class Custom_enh_Loss(nn.Module):
+    def __init__(self, lmbda=1e-2, device = device):
+        super().__init__()
+        self.rdLoss = RateDistortionLoss(lmbda)
+        self.lpips = iqa.LPIPSvgg().to(device)
+        self.ssim = iqa.SSIM()
+        #self.dists = iqa.DISTS().to(device)
+        #self.MDTVSFA_metr = calc_met()
+    def forward(self, X_out, Y):
+        if X_out['x_hat'].device != Y.device:
+            X_out['x_hat'] = X_out['x_hat'].to(device)
+        self.loss = self.rdLoss(X_out, Y)
+        #self.loss['MDTVSFA'] = -MDTVSFA_metr.MDTVSFA(X_out['x_hat'])
+        #loss["DISTS"] = self.dists(X_out['x_hat'], Y)
+        self.loss["LPIPS"] = self.lpips(X_out['x_hat'], Y)
+        lmbda = 1e-2
+        self.loss["loss"] = self.loss["LPIPS"] #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
+        #loss["aux_loss"] = net_codec.aux_loss()
+        with torch.no_grad():
+            self.loss["SSIM"] = self.ssim(X,X_out['x_hat'])
+        return self.loss
+    
+loss_calc = Custom_enh_Loss()
+class Video_reader_read():
+    def __init__(self,name1 = dst_dir + "blue_hair_1920x1080_30.yuv.Y4M"):
+        self.nameGT = name1
+        
+    def get_frame(self):
+        self.temp_reader1 = skvideo.io.FFmpegReader(self.nameGT, outputdict={"-c:v" :" rawvideo","-f": "rawvideo"})
+        self.datagenGT = [frameGT / 255. for frameGT in self.temp_reader1.nextFrame()]
+        self.temp_reader1.close()
+        self.datagenGT = np.array([[i[:,:,0],i[:,:,1],i[:,:,2]] for i in self.datagenGT])
+        self.lst_1 = torch.tensor(self.datagenGT[0]).float() - 0.5
+        return torch.stack([self.lst_1])
+rd = Video_reader_read()
+def pltimshow(arg):
+    plt.imshow(arg.cpu().detach().numpy().swapaxes(1,3).swapaxes(1,2)[0])
+
+
+def pltimshow_batch(args, filename = "vis/tmp.png"):
+    plt.figure(dpi = 800)
+    Ar2 = None
+    for arg in args:
+        Ar1 = np.concatenate([i for i in arg.cpu().detach().numpy().swapaxes(1,3).swapaxes(1,2)], 0)
+        if Ar2 is None:
+            Ar2 = Ar1
+        else:
+            Ar2 = np.concatenate([Ar2,Ar1],1)
+    plt.imshow(Ar2)
+    plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight')
+#X_orig = cheng2020_attn(quality=2, pretrained=True)(X.cpu())
+
 rdLoss = RateDistortionLoss()
 from torch.utils.data import Dataset, IterableDataset
 dst_dir_vimeo = 'P:/vimeo_triplet/sequences/'
@@ -302,12 +312,6 @@ for epoch in tqdm(range(max_epoch)):
             X_out = net_codec.forward(X_enhance)
             loss = loss_calc(X_out, Y)
             lmbda = 1e-2
-            #with torch.no_grad():
-            #loss['MDTVSFA'] = -metr.MDTVSFA(X_out['x_hat'])
-            #loss["LPIPS"] = lpips(X_out['x_hat'], X)
-            #loss["DISTS"] = dists(X_out['x_hat'], X)
-            #loss["loss"] =  loss['MDTVSFA']  + 2000*loss['mse_loss']#loss["DISTS"] + loss["bpp_loss"] + loss["LPIPS"] + loss['MDTVSFA'] 
-            
             if epoch != 0 and to_train:
                 loss["loss"].backward()
                 optimizer.step()
@@ -315,9 +319,7 @@ for epoch in tqdm(range(max_epoch)):
             #if epoch != 0 and to_train:
                 #loss["aux_loss"].backward()
                 #aux_optimizer.step()
-                
             torch.nn.utils.clip_grad_norm_(opt_target, 1)
-            #optimizer.step()
             
             for j in list(loss.keys()):
                 j_converted = j + ("_test" if not to_train else "")
@@ -357,7 +359,7 @@ for epoch in tqdm(range(max_epoch)):
             if net_enhance != None:
                 torch.save(net_enhance.state_dict(), "models_enhancement/model_" +save_filename + ".ckpt") 
             import pickle
-            with open('models/plots'+ save_filename + '.pkl', 'wb') as f:
+            with open('logs_enhancement/plots'+ save_filename + '.pkl', 'wb') as f:
                 pickle.dump(logs_plot, f)
     
         tqdm_dataset.refresh()

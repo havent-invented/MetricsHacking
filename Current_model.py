@@ -300,13 +300,13 @@ for epoch in tqdm(range(max_epoch)):
             aux_optimizer.zero_grad()
             X_enhance = net_enhance(X)
             X_out = net_codec.forward(X_enhance)
-            loss = rdLoss(X_out, Y)
+            loss = loss_calc(X_out, Y)
             lmbda = 1e-2
             #with torch.no_grad():
-            loss['MDTVSFA'] = -metr.MDTVSFA(X_out['x_hat'])
+            #loss['MDTVSFA'] = -metr.MDTVSFA(X_out['x_hat'])
             #loss["LPIPS"] = lpips(X_out['x_hat'], X)
             #loss["DISTS"] = dists(X_out['x_hat'], X)
-            loss["loss"] =  loss['MDTVSFA']  + 2000*loss['mse_loss']#loss["DISTS"] + loss["bpp_loss"] + loss["LPIPS"] + loss['MDTVSFA'] 
+            #loss["loss"] =  loss['MDTVSFA']  + 2000*loss['mse_loss']#loss["DISTS"] + loss["bpp_loss"] + loss["LPIPS"] + loss['MDTVSFA'] 
             
             if epoch != 0 and to_train:
                 loss["loss"].backward()

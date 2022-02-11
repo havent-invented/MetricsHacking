@@ -103,7 +103,7 @@ net_enhance = ResNetUNet(3).to(device)
 #nn codec
 #EXEC
 
-save_filename = "vimeo11k_LPIPS_enhance_cheng2020_attn_quality2"
+save_filename = "vimeo11k_DISTS_enhance_cheng2020_attn_quality2"
 
 
 #net_codec = bmshj2018_factorized(quality=2, pretrained=True).train().to(device)
@@ -174,19 +174,19 @@ class Custom_enh_Loss(nn.Module):
     def __init__(self, lmbda=1e-2, device = device):
         super().__init__()
         self.rdLoss = RateDistortionLoss(lmbda)
-        self.lpips = iqa.LPIPSvgg().to(device)
+        #self.lpips = iqa.LPIPSvgg().to(device)
         self.ssim = iqa.SSIM()
-        #self.dists = iqa.DISTS().to(device)
+        self.dists = iqa.DISTS().to(device)
         #self.MDTVSFA_metr = calc_met()
     def forward(self, X_out, Y):
         if X_out['x_hat'].device != Y.device:
             X_out['x_hat'] = X_out['x_hat'].to(device)
         self.loss = self.rdLoss(X_out, Y)
         #self.loss['MDTVSFA'] = -MDTVSFA_metr.MDTVSFA(X_out['x_hat'])
-        #loss["DISTS"] = self.dists(X_out['x_hat'], Y)
-        self.loss["LPIPS"] = self.lpips(X_out['x_hat'], Y)
+        self.loss["DISTS"] = self.dists(X_out['x_hat'], Y)
+        #self.loss["LPIPS"] = self.lpips(X_out['x_hat'], Y)
         lmbda = 1e-2
-        self.loss["loss"] = self.loss["LPIPS"] #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
+        self.loss["loss"] = self.loss["DISTS"] #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
         #loss["aux_loss"] = net_codec.aux_loss()
         with torch.no_grad():
             self.loss["SSIM"] = self.ssim(X,X_out['x_hat'])

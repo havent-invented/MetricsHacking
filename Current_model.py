@@ -336,7 +336,7 @@ class Custom_enh_Loss(nn.Module):
         lmbda = 1e-2
         #self.loss["SSIM"] = self.ssim(X,X_out['x_hat'])
         #self.loss["Linearity"] = self.lin_loss(X_out['x_hat'])
-        self.loss["loss"] = self.loss['MDTVSFA'] + 2000*self.loss["mse_loss"] #self.loss["Linearity"] +200* self.loss["mse_loss"]  #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
+        self.loss["loss"] = self.loss['MDTVSFA'] #+ 2000*self.loss["mse_loss"] #self.loss["Linearity"] +200* self.loss["mse_loss"]  #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
         #loss["aux_loss"] = net_codec.aux_loss()
         return self.loss
 if loss_calc == None:
@@ -464,7 +464,7 @@ for epoch in tqdm(range(max_epoch)):
             aux_optimizer.zero_grad()
             X_enhance = net_enhance(X)
             X_out = net_codec.forward(X_enhance)
-            loss = {'loss': -loss_calc.MDTVSFA_metr.MDTVSFA(X_out['x_hat']) }#loss_calc(X_out, Y)
+            loss = loss_calc(X_out, Y)
             
             lmbda = 1e-2
             if epoch != 0 and to_train:

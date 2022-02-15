@@ -142,7 +142,6 @@ class Linearity(nn.Module):
         del checkpoint
         
     def forward(self, im, device = device):
-        im = normalize(im, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
         y = self.model(im)
         val = (y[-1]* self.k[-1] + self.b[-1]).mean()
         return val / 100.
@@ -321,22 +320,25 @@ class Custom_enh_Loss(nn.Module):
         #self.lpips = iqa.LPIPSvgg().to(device)
         #self.ssim = iqa.SSIM()
         #self.dists = iqa.DISTS().to(device)
-        self.MDTVSFA_metr = calc_met()
-        #brisq_loss = BRISQ()    
+        #self.MDTVSFA_metr = calc_met()
+        #self.brisq_loss = BRISQ()    
         #self.lin_loss = Linearity()
-        #vsfa_loss = VSFA_loss()
+        #self.lin_loss.requires_grad_()
+        self.vsfa_loss = VSFA_loss()
         #piapp_loss = PieAPP()
     def forward(self, X_out, Y):
         if X_out['x_hat'].device != Y.device:
             X_out['x_hat'] = X_out['x_hat'].to(device)
         self.loss = self.rdLoss(X_out, Y)
-        self.loss['MDTVSFA'] = -self.MDTVSFA_metr.MDTVSFA(X_out['x_hat'])
+        #self.loss['MDTVSFA'] = -self.MDTVSFA_metr.MDTVSFA(X_out['x_hat'])
         #self.loss["DISTS"] = self.dists(X_out['x_hat'], Y)
         #self.loss["LPIPS"] = self.lpips(X_out['x_hat'], Y)
         lmbda = 1e-2
         #self.loss["SSIM"] = self.ssim(X,X_out['x_hat'])
         #self.loss["Linearity"] = self.lin_loss(X_out['x_hat'])
-        self.loss["loss"] = self.loss['MDTVSFA'] #+ 2000*self.loss["mse_loss"] #self.loss["Linearity"] +200* self.loss["mse_loss"]  #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
+        #self.loss["BRISQ"] = self.brisq_loss(X_out['x_hat'])
+        self.loss["VSFA"] = self.vsfa_loss(X_out['x_hat'])
+        self.loss["loss"] = self.loss["VSFA"] + 200*self.loss["mse_loss"]#+ 2000*self.loss["mse_loss"] #self.loss["Linearity"] +200* self.loss["mse_loss"]  #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
         #loss["aux_loss"] = net_codec.aux_loss()
         return self.loss
 if loss_calc == None:
@@ -425,23 +427,26 @@ plot_data = []
 plot_data_mse = []
 from IPython.display import clear_output
 if optimize_image:
-    X = next(iter(dataset_train))
-parameters = set(p for n, p in net_enhance.named_parameters()) if not optimize_image else [X]# set(p for n, p in net_codec.named_parameters() if not n.endswith(".quantiles"))
+    X = next(iter(dataset_train)).detach().to(device)
+    Y = X.detach().to(device)
+    X.requires_grad_()
+    X.retain_grad()
+parameters = set(p for n, p in net_enhance.named_parameters()) if not optimize_image else [X]
 aux_parameters = set(p for n, p in net_codec.named_parameters() if n.endswith(".quantiles"))
 aux_loss = net_codec.entropy_bottleneck.loss()
-optimizer = optim.Adam(parameters, lr=1e-4)
 
+optimizer = optim.Adam(parameters, lr=1e-4)
 aux_optimizer = optim.Adam(aux_parameters, lr=1e-3)
 
 
 save_result = True
 X_sample = torch.load("sample_data/X.ckpt")
-Y = None
+
 n = 30
 rd = Video_reader_read()
 logs_plot_cur = {}
 logs_plot = {}
-max_epoch = 12
+max_epoch = 120
 skip_0epoch = True
 for epoch in tqdm(range(max_epoch)):
     idx_video = 0
@@ -452,18 +457,18 @@ for epoch in tqdm(range(max_epoch)):
         tqdm_dataset = tqdm(dataset_train if to_train else dataset_test)
         for frame in tqdm_dataset:
             idx_video += 1
-            if X == None or not optimize_image:
+            if not optimize_image:
                 X = frame
                 X = torchvision.transforms.RandomResizedCrop((256,256))(X)
                 X = X.to(device)#X = X.detach().to(device)
-            if optimize_image and not X.requires_grad:
-                X.requires_grad_()
-            if not optimize_image or Y == None:
                 Y = X.detach().clone().to(device)
+            X.data.clamp_(min=0,max=1)
             optimizer.zero_grad()
             aux_optimizer.zero_grad()
             X_enhance = net_enhance(X)
+            X_enhance.data.clamp_(min=0,max=1)
             X_out = net_codec.forward(X_enhance)
+            X_out['x_hat'].data.clamp_(min=0,max=1)
             loss = loss_calc(X_out, Y)
             
             lmbda = 1e-2
@@ -481,9 +486,9 @@ for epoch in tqdm(range(max_epoch)):
                     logs_plot_cur[j_converted] = []
                 logs_plot_cur[j_converted].append(loss[j].data.to("cpu").numpy())
             
-            X_enhance.data.clamp_(min=0,max=1)
-            X.data.clamp_(min=0,max=1)
-            X_out['x_hat'].data.clamp_(min=0,max=1)
+            #X_enhance.data.clamp_(min=0,max=1)
+            #X.data.clamp_(min=0,max=1)
+            #X_out['x_hat'].data.clamp_(min=0,max=1)
             torch.nn.utils.clip_grad_norm_(parameters, 1)
             
     if not to_train:

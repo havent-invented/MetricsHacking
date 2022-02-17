@@ -247,7 +247,10 @@ class ResNetUNet(nn.Module):
         return out
 if net_enhance == None:
     net_enhance = ResNetUNet(3).to(device)
-save_filename = "vimeo11k_Linearity_20mse_enhance_cheng2020_attn_quality2"
+#save_filename = "vimeo11k_Linearity_2000mse_enhance_cheng2020_attn_quality2"
+
+save_filename = "vimeo11k_Linearity_20mse_enhance_no_codec"
+
 #net_codec = bmshj2018_factorized(quality=2, pretrained=True).train().to(device)
 #mbt2018
 if net_codec == None:
@@ -322,9 +325,9 @@ class Custom_enh_Loss(nn.Module):
         #self.dists = iqa.DISTS().to(device)
         #self.MDTVSFA_metr = calc_met()
         #self.brisq_loss = BRISQ()    
-        #self.lin_loss = Linearity()
-        #self.lin_loss.requires_grad_()
-        self.vsfa_loss = VSFA_loss()
+        self.lin_loss = Linearity()
+        self.lin_loss.requires_grad_()
+        #self.vsfa_loss = VSFA_loss()
         #piapp_loss = PieAPP()
     def forward(self, X_out, Y):
         if X_out['x_hat'].device != Y.device:
@@ -335,10 +338,10 @@ class Custom_enh_Loss(nn.Module):
         #self.loss["LPIPS"] = self.lpips(X_out['x_hat'], Y)
         lmbda = 1e-2
         #self.loss["SSIM"] = self.ssim(X,X_out['x_hat'])
-        #self.loss["Linearity"] = self.lin_loss(X_out['x_hat'])
+        self.loss["Linearity"] = self.lin_loss(X_out['x_hat'])
         #self.loss["BRISQ"] = self.brisq_loss(X_out['x_hat'])
-        self.loss["VSFA"] = self.vsfa_loss(X_out['x_hat'])
-        self.loss["loss"] = self.loss["VSFA"] + 200*self.loss["mse_loss"]#+ 2000*self.loss["mse_loss"] #self.loss["Linearity"] +200* self.loss["mse_loss"]  #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
+        #self.loss["VSFA"] = self.vsfa_loss(X_out['x_hat'])
+        self.loss["loss"] = self.loss["Linearity"] + 20*self.loss["mse_loss"]#+ 2000*self.loss["mse_loss"] #self.loss["Linearity"] +200* self.loss["mse_loss"]  #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
         #loss["aux_loss"] = net_codec.aux_loss()
         return self.loss
 if loss_calc == None:
@@ -354,7 +357,14 @@ class Video_reader_read():
         self.datagenGT = np.array([[i[:,:,0],i[:,:,1],i[:,:,2]] for i in self.datagenGT])
         self.lst_1 = torch.tensor(self.datagenGT[0]).float() - 0.5
         return torch.stack([self.lst_1])
-rd = Video_reader_read()
+    def get_frames(self):
+        self.temp_reader1 = skvideo.io.FFmpegReader(self.nameGT, outputdict={"-c:v" :" rawvideo","-f": "rawvideo"})
+        self.datagenGT = [frameGT / 255. for frameGT in self.temp_reader1.nextFrame()]
+        self.temp_reader1.close()
+        self.datagenGT = np.array([[i[:,:,0],i[:,:,1],i[:,:,2]] for i in self.datagenGT])
+        self.lst_1 = torch.tensor(self.datagenGT).float() - 0.5
+        return self.lst_1
+    
 def pltimshow(arg):
     plt.imshow(arg.cpu().detach().numpy().swapaxes(1,3).swapaxes(1,2)[0])
 
@@ -414,7 +424,7 @@ class CustomImageDataset(Dataset):
 #dataset_train, dataset_test = torch.utils.data.random_split( dataset,[int(len(dataset)*0.9),len(dataset)-int(len(dataset)*0.9)])
 dataset_train = CustomImageDataset(dst_dir_vimeo,train= True, datalen = datalen_train)
 dataset_test = CustomImageDataset(dst_dir_vimeo,train= False, datalen = datalen_test)
-dataset_train = DataLoader(dataset_train, batch_size= 4, shuffle = True)#8
+dataset_train = DataLoader(dataset_train, batch_size= 8, shuffle = True)#8#4
 dataset_test = DataLoader(dataset_test, batch_size= 4, shuffle = True)#8
 mse_loss = nn.MSELoss()
 #opt_target = [i for i in net_codec.parameters()]
@@ -440,13 +450,12 @@ aux_optimizer = optim.Adam(aux_parameters, lr=1e-3)
 
 
 save_result = True
-X_sample = torch.load("sample_data/X.ckpt")
+X_sample = torch.load("sample_data/X.ckpt").to("cpu")
 
 n = 30
-rd = Video_reader_read()
 logs_plot_cur = {}
 logs_plot = {}
-max_epoch = 120
+max_epoch = 12
 skip_0epoch = True
 for epoch in tqdm(range(max_epoch)):
     idx_video = 0

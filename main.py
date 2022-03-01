@@ -10,7 +10,10 @@ from CNNfeatures import get_features
 from VQAmodel import VQAModel
 from argparse import ArgumentParser
 import time
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+try:
+    device
+except Exception:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from PIL import Image
 import torch
 import numpy as np

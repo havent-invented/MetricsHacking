@@ -1,4 +1,59 @@
 import sys
+
+if 0:
+    import torchvision
+    import torch
+    class enhance_Identity():
+        def __init__(self):
+            pass
+        def named_parameters(self):
+            return {("3.quantiles",torch.nn.Parameter(torch.tensor([[0.]]))) : torch.nn.Parameter(torch.tensor([[0.]]))} 
+        def parameters(self):
+            return self.named_parameters() 
+        def forward(self, X):
+            return X
+        def __call__(self, X):
+            return self.forward(X)
+        def to(self, device):
+            return self
+    enhance_Identity = enhance_Identity()
+    class codec_Identity():
+        def __init__(self):
+            import pickle
+            self.X_hat = None
+            with open('./sample_data/likelihoods.pkl', 'rb') as f:
+                self.X_hat = pickle.load(f)
+            self.X_out = {"likelihoods": self.X_hat}
+            class entropy_bottleneck:
+                def __init__(self):
+                    self.loss = lambda : 0
+            self.entropy_bottleneck = entropy_bottleneck()
+            self.entropy_bottleneck.loss = lambda : 0
+        def named_parameters(self):
+            return {("3.quantiles",torch.nn.Parameter(torch.tensor([[0.]]))) : torch.nn.Parameter(torch.tensor([[0.]]))}
+        def forward(self, X):
+            self.X_out['x_hat'] = X
+            return self.X_out
+        def __call__(self, X):
+            return self.forward(X)
+        def to(self, device):
+            return self
+        codec_Identity = codec_Identity()
+    #datalen_train = 4#128
+    #datalen_test = 4#32
+    optimize_image = False
+    net_enhance = enhance_Identity if optimize_image else None
+    net_codec = codec_Identity #if optimize_image else None
+    save_netcodec = False
+    save_net_enhance = True
+
+
+
+
+
+
+
+import sys
 sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
 exec(open('main.py').read())#MAIN
 import compressai
@@ -20,7 +75,22 @@ import torch
 import numpy as np
 from torch import nn
 import torch.optim as optim
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+patch_sz = 256
+
+#try:
+#    save_filename
+#except Exception:
+save_filename = "vimeo11k_VSFA_200mse_enhance_cheng2020_attn_quality2_fixed_direction_tmp"
+    #save_filename = "vimeo11k_Linearity_2000mse_enhance_no_codec_fixed_direction"
+    
+try: 
+    break_flag
+except Exception:
+    break_flag = False
+try:
+    device
+except Exception:
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 try:
     save_netcodec
 except Exception:
@@ -68,7 +138,7 @@ class enhance_Identity():
         return self.forward(X)
     def to(self, device):
         return self
-
+enhance_Identity = enhance_Identity()
 class codec_Identity():
     def __init__(self):
         import pickle
@@ -91,14 +161,12 @@ class codec_Identity():
         return self.forward(X)
     def to(self, device):
         return self
-    
+codec_Identity = codec_Identity()    
 def convrelu(in_channels, out_channels, kernel, padding):
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, kernel, padding=padding),
         nn.ReLU(inplace=True),
     )
-
-
 
 import torch
 import os
@@ -110,8 +178,8 @@ from torchvision.transforms.functional import resize, to_tensor, normalize
 from PIL import Image
 import h5py
 
-def Linearity_met(im):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def Linearity_met(im, device = device):
+    
     model = IQAModel().to(device)  #
     im = normalize(im, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
 
@@ -125,7 +193,49 @@ def Linearity_met(im):
     print('The image quality score is {}'.format(y[-1].item() * k[-1] + b[-1]))
 
 
-
+class koniq(nn.Module):
+    def __init__(self, model_dir ="E:/VMAF_METRIX/NeuralNetworkCompression/koniq/", device = device):
+        super().__init__()
+        import sys
+        sys.path.insert(1, model_dir)
+        from inceptionresnetv2 import inceptionresnetv2
+        class model_qa(nn.Module):
+            def __init__(self,num_classes,**kwargs):
+                super(model_qa,self).__init__()
+                base_model = inceptionresnetv2(num_classes=1000, pretrained='imagenet')
+                self.base= nn.Sequential(*list(base_model.children())[:-1])
+                self.fc = nn.Sequential(
+                    nn.Linear(1536, 2048),
+                    nn.ReLU(inplace=True),
+                    nn.BatchNorm1d(2048),
+                    nn.Dropout(p=0.25),
+                    nn.Linear(2048, 1024),
+                    nn.ReLU(inplace=True),
+                    nn.BatchNorm1d(1024),
+                    nn.Dropout(p=0.25),
+                    nn.Linear(1024, 256),
+                    nn.ReLU(inplace=True),
+                    nn.BatchNorm1d(256),         
+                    nn.Dropout(p=0.5),
+                    nn.Linear(256, num_classes),
+                )
+        
+            def forward(self,x):
+                x = self.base(x)
+                x = x.view(x.size(0), -1)
+                x = self.fc(x)
+                return x    
+        
+        self.KonCept512 = model_qa(num_classes=1) 
+        self.KonCept512.load_state_dict(torch.load(model_dir + 'KonCept512.pth'))
+        self.KonCept512 = self.KonCept512.to(device)
+        
+    def forward(self, im, device = device):
+        #patch size must be >= (299,299)
+        out = self.KonCept512(im).mean()
+        return out
+   
+    
 import torch.nn as nn
 from torchvision.transforms.functional import resize, to_tensor, normalize
 class Linearity(nn.Module):
@@ -133,7 +243,7 @@ class Linearity(nn.Module):
         super().__init__()
         sys.path.insert(1, model_dir)
         from IQAmodel import IQAModel
-        self.model = IQAModel().to(device)
+        self.model = IQAModel(device = device).to(device)
         checkpoint = torch.load(model_dir +"../p1q2.pth")
         self.k = checkpoint['k']
         self.b = checkpoint['b']
@@ -146,20 +256,34 @@ class Linearity(nn.Module):
         val = (y[-1]* self.k[-1] + self.b[-1]).mean()
         return val / 100.
     
+class NIMA(nn.Module):
+    def __init__(self, model_dir ="E:/VMAF_METRIX/NeuralNetworkCompression/Neural-IMage-Assessment/", device = device):
+        super().__init__()
+        import sys
+        import torchvision.models as models
+        import torchvision.transforms as transforms
+        sys.path.insert(1, model_dir)
+        from model.model import NIMA   
+        self.base_model = models.vgg16(pretrained=True).to(device)
+        self.model = NIMA(self.base_model).to(device)
+        self.model.load_state_dict(torch.load(model_dir +"model/epoch-82.pth"))
+    def forward(self, im, device = device):
+        out = self.model(im[:,:,:224,:224]).mean()
+        return out
+
 class VSFA_loss(nn.Module):
-    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/VSFA/VSFA/"):
+    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/VSFA/VSFA/", device = device):
         super().__init__()
         import sys
         sys.path.insert(1, model_dir)
         import VSFA
         from CNNfeatures import get_features
         self.get_features = get_features
-        device = "cuda:0"
         self.model = VSFA.VSFA()
         self.model.load_state_dict(torch.load(model_dir + "models/VSFA.pt"))
         self.model.to(device)
     def forward(self, X_sample, device = device):
-        self.features = self.get_features(X_sample, frame_batch_size=len(X_sample), device=device)
+        self.features = self.get_features(X_sample, frame_batch_size = len(X_sample), device=device)
         self.features = torch.unsqueeze(self.features, 0)  # batch size 1
         input_length = self.features.shape[1] * torch.ones(1, 1)
         outputs = self.model(self.features, input_length)
@@ -167,14 +291,46 @@ class VSFA_loss(nn.Module):
         return outputs[0][0]
 from piq import PieAPP
 class BRISQ(nn.Module):
-    def __init__(self):
+    def __init__(self, device = device):
         super().__init__()
         from piq import BRISQUELoss
         self.model = BRISQUELoss()
+        self.model = self.model.to(device)
     def forward(self, X_sample):
         val = self.model(torch.clamp(X_sample,0,1))
         return val
 
+class SPAQ(nn.Module):
+    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/SPAQ", device = device):
+        super().__init__()
+        sys.path.insert(1, model_dir)
+        from BL_demo import Demo#Changed map_location
+        self.dm = Demo("", checkpoint_dir='E:/VMAF_METRIX/NeuralNetworkCompression/SPAQ/weights/BL_release.pt', device = device )
+        self.dm.model = self.dm.model.to(device)
+    def forward(self, im, device = device):
+        score_1 = self.dm.model(im).mean()
+        return score_1 / 100.
+
+class paq2pic_model(nn.Module):
+    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/paq2piq/", device = device, blk_size = None):
+        super().__init__()
+        import sys
+        sys.path.insert(1,model_dir)
+        from paq2piq_standalone import InferenceModel, RoIPoolModel
+        self.model = InferenceModel(RoIPoolModel(backbone='resnet18', pretrained=True), model_dir + "models/RoIPoolModel-fit.10.bs.120.pth", device = device)
+        if blk_size != None:
+            self.model.blk_size = blk_size
+        
+    def forward(self, X_sample, device = device):
+        batch_sz = len(X_sample)
+        global_score_batch = 0
+        for X_i in X_sample:
+            t = self.model.model(X_i.unsqueeze(0))[0]
+            self.model.model.input_block_rois(self.model.blk_size, [X_sample.shape[-2], X_sample.shape[-1]], device=device)
+            global_score = t[0]
+            global_score_batch += global_score
+        global_score_batch = global_score_batch / batch_sz /100.
+        return global_score_batch
 
 class ResNetUNet(nn.Module):
     def __init__(self, n_class):
@@ -208,6 +364,10 @@ class ResNetUNet(nn.Module):
         self.conv_last = nn.Conv2d(64, n_class, 1)
 
     def forward(self, input):
+        input_shape = None
+        if input.shape[-1] % 32 or input.shape[-2] %32:
+            input_shape = input.shape
+            input = torch.nn.functional.pad(input,pad = ((32-input.shape[-1]%32)%32,0,0,(32-input.shape[-2]%32)%32 ), mode = 'reflect')
         x_original = self.conv_original_size0(input)
         x_original = self.conv_original_size1(x_original)
 
@@ -243,13 +403,11 @@ class ResNetUNet(nn.Module):
         x = self.conv_original_size2(x)
 
         out = self.conv_last(x)
-
+        if input_shape != None:
+            out = out[..., :input_shape[-2], :input_shape[-1]]
         return out
 if net_enhance == None:
     net_enhance = ResNetUNet(3).to(device)
-#save_filename = "vimeo11k_Linearity_2000mse_enhance_cheng2020_attn_quality2"
-
-save_filename = "vimeo11k_Linearity_20mse_enhance_no_codec"
 
 #net_codec = bmshj2018_factorized(quality=2, pretrained=True).train().to(device)
 #mbt2018
@@ -258,15 +416,15 @@ if net_codec == None:
 env = calc_met( model = "MDTVSFA", home_dir1=home_dir,dataset_dir=dst_dir)
 #env.datagen = [frameGT for frameGT in skvideo.io.FFmpegReader(env.dataset_dir + env.dataset[0], outputdict={"-c:v" :" rawvideo","-f": "rawvideo"}).nextFrame()]
 self = env
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 
 from piq import LPIPS as piq_LPIPS#PieAPP VSI, FSIM, NLPD, deepIQA
 from piq import DISTS as piq_DISTS
 import IQA_pytorch as iqa#SSIM, GMSD, LPIPSvgg, DISTS
 class calc_met:
-    def __init__(self,dataset1 = ["Run439.Y4M"], convKer1 = None, home_dir1 = "R:/", creat_dir = False, calc_SSIM_PSNR = False, calc_model_features = False, model = "vmaf_v063" , codec = '   -preset:v medium -x265-params log-level=error ',dataset_dir = "dataset/"):
-        self.device = "cuda:0"
+    def __init__(self,dataset1 = ["Run439.Y4M"], convKer1 = None, home_dir1 = "R:/", creat_dir = False, calc_SSIM_PSNR = False, calc_model_features = False,device = device, model = "vmaf_v063" , codec = '   -preset:v medium -x265-params log-level=error ',dataset_dir = "dataset/"):
+        self.device = device
         self.model = VQAModel().to(device)
         self.model.load_state_dict(torch.load('../models/MDTVSFA.pt'))
         self.model.train()
@@ -306,43 +464,81 @@ class RateDistortionLoss(nn.Module):
         N, _, H, W = target.size()
         out = {}
         num_pixels = N * H * W
-
-        out["bpp_loss"] = sum(
+        out["mse_loss"] = self.mse(output["x_hat"], target)
+        try:
+            out["bpp_loss"] = sum(
             (torch.log(likelihoods).sum() / (-math.log(2) * num_pixels))
             for likelihoods in output["likelihoods"].values()
-        )
-        out["mse_loss"] = self.mse(output["x_hat"], target)
-        out["PSNR"] = 10 * torch.log10(1/ out["mse_loss"])
-        out["loss_classic"] = self.lmbda * 255 ** 2 * out["mse_loss"] + out["bpp_loss"]
+            )
+            out["loss_classic"] = self.lmbda * 255 ** 2 * out["mse_loss"] + out["bpp_loss"]
+        except Exception:
+            pass
         return out
 
 class Custom_enh_Loss(nn.Module):
-    def __init__(self, lmbda=1e-2, device = device):
+    def __init__(self, lmbda=1e-2, device = device, target_lst = ["VSFA", "mse_loss"], k_lst = [1, 2000.]):
         super().__init__()
+        self.k_lst = k_lst
+        self.target_lst = target_lst
         self.rdLoss = RateDistortionLoss(lmbda)
-        #self.lpips = iqa.LPIPSvgg().to(device)
-        #self.ssim = iqa.SSIM()
-        #self.dists = iqa.DISTS().to(device)
-        #self.MDTVSFA_metr = calc_met()
-        #self.brisq_loss = BRISQ()    
-        self.lin_loss = Linearity()
-        self.lin_loss.requires_grad_()
-        #self.vsfa_loss = VSFA_loss()
-        #piapp_loss = PieAPP()
+        if "LPIPS" in self.target_lst:
+            self.lpips = iqa.LPIPSvgg().to(device)
+        if "SSIM" in self.target_lst:
+            self.ssim = iqa.SSIM()
+        if "DISTS" in self.target_lst:
+            self.dists = iqa.DISTS().to(device)
+        if "MDTVSFA" in self.target_lst:
+            self.MDTVSFA_metr = calc_met()
+        if "BRISQ" in self.target_lst:
+            self.brisq_loss = BRISQ()   
+        if "Linearity" in self.target_lst:
+            self.lin_loss = Linearity()
+            self.lin_loss = self.lin_loss.to(device)
+            self.lin_loss.requires_grad_()
+        if "SPAQ" in self.target_lst:
+            self.spaq_loss = SPAQ()
+        if "VSFA" in self.target_lst:
+            self.vsfa_loss = VSFA_loss()
+        if "PieAPP" in self.target_lst:
+            piapp_loss = PieAPP()
+        if "PAC2PIC" in self.target_lst:
+            self.paq2pic_loss = paq2pic_model()
+        if "NIMA" in self.target_lst:
+            self.NIMA_loss = NIMA()
+        if "KONIQ" in self.target_lst:
+            self.koniq_loss = koniq()
     def forward(self, X_out, Y):
         if X_out['x_hat'].device != Y.device:
             X_out['x_hat'] = X_out['x_hat'].to(device)
         self.loss = self.rdLoss(X_out, Y)
-        #self.loss['MDTVSFA'] = -self.MDTVSFA_metr.MDTVSFA(X_out['x_hat'])
-        #self.loss["DISTS"] = self.dists(X_out['x_hat'], Y)
-        #self.loss["LPIPS"] = self.lpips(X_out['x_hat'], Y)
-        lmbda = 1e-2
-        #self.loss["SSIM"] = self.ssim(X,X_out['x_hat'])
-        self.loss["Linearity"] = self.lin_loss(X_out['x_hat'])
-        #self.loss["BRISQ"] = self.brisq_loss(X_out['x_hat'])
-        #self.loss["VSFA"] = self.vsfa_loss(X_out['x_hat'])
-        self.loss["loss"] = self.loss["Linearity"] + 20*self.loss["mse_loss"]#+ 2000*self.loss["mse_loss"] #self.loss["Linearity"] +200* self.loss["mse_loss"]  #+ loss["DISTS"] +  loss['MDTVSFA'] #+ loss["bpp_loss"] + lmbda / 2 * loss["mse_loss"] * 255 ** 2# * loss["mse"] + loss["bpp_loss"]
-        #loss["aux_loss"] = net_codec.aux_loss()
+        self.loss['PSNR'] = 10 * torch.log10(1. / self.loss['mse_loss'])
+        if "LPIPS" in self.target_lst:
+            self.loss["LPIPS"] = self.lpips(X_out['x_hat'], Y)
+        if "SSIM" in self.target_lst:
+            self.loss["SSIM"] = self.ssim(Y, X_out['x_hat'])
+        if "DISTS" in self.target_lst:
+            self.loss["DISTS"] = self.dists(X_out['x_hat'], Y)
+        if "MDTVSFA" in self.target_lst:
+            self.loss['MDTVSFA'] = -self.MDTVSFA_metr.MDTVSFA(X_out['x_hat']).mean()
+        if "BRISQ" in self.target_lst:
+            self.loss["BRISQ"] = self.brisq_loss(X_out['x_hat'])
+        if "Linearity" in self.target_lst:
+            self.loss["Linearity"] = -self.lin_loss(X_out['x_hat'])
+        if "SPAQ" in self.target_lst:
+            self.loss["SPAQ"] = -self.spaq_loss(X_out['x_hat'])
+        if "VSFA" in self.target_lst:
+            self.loss["VSFA"] = -self.vsfa_loss(X_out['x_hat'])
+        if "PieAPP" in self.target_lst:
+            piapp_loss = PieAPP()
+        if "PAC2PIC" in self.target_lst:
+            self.loss["PAC2PIC"] = -self.paq2pic_loss(X_out['x_hat'])
+        if "NIMA" in self.target_lst:
+            self.loss["NIMA"] = -self.NIMA_loss(X_out['x_hat'])
+        if "KONIQ" in self.target_lst:
+            self.loss["KONIQ"] = -self.koniq_loss(X_out['x_hat'])
+        self.loss["loss"] = 0
+        for cur_metrics, k in zip(self.target_lst, self.k_lst):
+            self.loss["loss"] += k * self.loss[cur_metrics]
         return self.loss
 if loss_calc == None:
     loss_calc = Custom_enh_Loss()
@@ -357,6 +553,7 @@ class Video_reader_read():
         self.datagenGT = np.array([[i[:,:,0],i[:,:,1],i[:,:,2]] for i in self.datagenGT])
         self.lst_1 = torch.tensor(self.datagenGT[0]).float() - 0.5
         return torch.stack([self.lst_1])
+    
     def get_frames(self):
         self.temp_reader1 = skvideo.io.FFmpegReader(self.nameGT, outputdict={"-c:v" :" rawvideo","-f": "rawvideo"})
         self.datagenGT = [frameGT / 255. for frameGT in self.temp_reader1.nextFrame()]
@@ -397,9 +594,37 @@ def dir_of_dirs(paths):
             A.append(os.path.join(j, i))
     return A
 
-class CustomImageDataset(Dataset):
-    def __init__(self, img_dir, transform=None, target_transform=None,train = True, datalen = 128):
+
+class Video_reader_dataset(Dataset):
+    def __init__(self, num_frames = None, name1 = dst_dir + "blue_hair_1920x1080_30.yuv.Y4M", minimal_batch_sz = 0):
         super(CustomImageDataset).__init__()
+        self.nameGT = name1
+        self.temp_reader1 = skvideo.io.FFmpegReader(self.nameGT, outputdict={"-c:v" :" rawvideo","-f": "rawvideo"})
+        self.datalen = self.temp_reader1.getShape()[0]
+        #self.datagenGT = [frameGT / 255. for frameGT in self.temp_reader1.nextFrame()]
+        self.datagenGT = self.temp_reader1.nextFrame()# [frameGT / 255. for frameGT in ]
+        #self.temp_reader1.close()
+        
+        if num_frames != None:
+            self.datalen = min(self.datalen, num_frames)
+        if minimal_batch_sz:
+            self.datalen = self.datalen // minimal_batch_sz * minimal_batch_sz
+    def __len__(self):
+        return self.datalen
+    def __getitem__(self, idx):
+        if idx >= self.datalen:
+            self.temp_reader1.close()
+            raise StopIteration
+        self.frame = next(self.datagenGT) / 255. #self.lst_1[idx]
+        self.frame = np.array([self.frame[:,:,0], self.frame[:,:,1], self.frame[:,:,2]])
+        self.frame = torch.tensor(self.frame).float() 
+        return self.frame 
+
+    
+class CustomImageDataset(Dataset):
+    def __init__(self, img_dir, transform=None, target_transform=None,train = True, datalen = 128, center_crop = False):
+        super(CustomImageDataset).__init__()
+        self.center_crop = center_crop
         self.datalen = datalen
         self.train = train
         self.image = 0
@@ -416,16 +641,19 @@ class CustomImageDataset(Dataset):
         if len(image.shape) == 2 or image.shape[0] == 1:
             image = torch.cat([image for i in range(3)])
         self.image = image
-        return torchvision.transforms.RandomResizedCrop((256,256))(self.image) / 255.
-    
+        if self.center_crop:
+            self.image = torchvision.transforms.CenterCrop((256,256))(self.image)
+        else:
+            self.image = torchvision.transforms.RandomResizedCrop((256,256))(self.image)
+        return self.image / 255.
 #dataset = CustomImageDataset(dst_dir_vimeo)#219k
 #dataset_train = iter(DataLoader(dataset, batch_size= 16, shuffle = True))#13k
 
 #dataset_train, dataset_test = torch.utils.data.random_split( dataset,[int(len(dataset)*0.9),len(dataset)-int(len(dataset)*0.9)])
 dataset_train = CustomImageDataset(dst_dir_vimeo,train= True, datalen = datalen_train)
-dataset_test = CustomImageDataset(dst_dir_vimeo,train= False, datalen = datalen_test)
-dataset_train = DataLoader(dataset_train, batch_size= 8, shuffle = True)#8#4
-dataset_test = DataLoader(dataset_test, batch_size= 4, shuffle = True)#8
+dataset_test = CustomImageDataset(dst_dir_vimeo,train= False, datalen = datalen_test, center_crop = True)
+dataset_train = DataLoader(dataset_train, batch_size= 8, shuffle = True)#8#4#8
+dataset_test = DataLoader(dataset_test, batch_size= 2, shuffle = True)#8#4#4
 mse_loss = nn.MSELoss()
 #opt_target = [i for i in net_codec.parameters()]
 opt_target = [p for n,p in net_codec.named_parameters()]
@@ -451,13 +679,14 @@ aux_optimizer = optim.Adam(aux_parameters, lr=1e-3)
 
 save_result = True
 X_sample = torch.load("sample_data/X.ckpt").to("cpu")
-
 n = 30
 logs_plot_cur = {}
 logs_plot = {}
 max_epoch = 12
 skip_0epoch = True
 for epoch in tqdm(range(max_epoch)):
+    if break_flag == True:
+        break
     idx_video = 0
     logs_plot_cur = {}
     if skip_0epoch and epoch == 0:
@@ -468,7 +697,7 @@ for epoch in tqdm(range(max_epoch)):
             idx_video += 1
             if not optimize_image:
                 X = frame
-                X = torchvision.transforms.RandomResizedCrop((256,256))(X)
+                X = torchvision.transforms.RandomResizedCrop((patch_sz,patch_sz))(X)
                 X = X.to(device)#X = X.detach().to(device)
                 Y = X.detach().clone().to(device)
             X.data.clamp_(min=0,max=1)
@@ -478,11 +707,18 @@ for epoch in tqdm(range(max_epoch)):
             X_enhance.data.clamp_(min=0,max=1)
             X_out = net_codec.forward(X_enhance)
             X_out['x_hat'].data.clamp_(min=0,max=1)
+            
+            
+            #X_out['x_hat'] = torch.nan_to_num(X_out['x_hat'])
+            #Y = torch.nan_to_num(Y)
+            
             loss = loss_calc(X_out, Y)
             
             lmbda = 1e-2
             if epoch != 0 and to_train:
                 loss["loss"].backward()
+                #list(parameters)[0].grad = torch.nan_to_num(list(parameters)[0].grad)
+                #list(parameters)[0] = torch.nan_to_num(list(parameters)[0])
                 optimizer.step()
             #loss["aux_loss"] = net_codec.aux_loss()
             #if epoch != 0 and to_train:
@@ -498,7 +734,7 @@ for epoch in tqdm(range(max_epoch)):
             #X_enhance.data.clamp_(min=0,max=1)
             #X.data.clamp_(min=0,max=1)
             #X_out['x_hat'].data.clamp_(min=0,max=1)
-            torch.nn.utils.clip_grad_norm_(parameters, 1)
+            #torch.nn.utils.clip_grad_norm_(parameters, 1)
             
     if not to_train:
         for j in list(logs_plot_cur.keys()):

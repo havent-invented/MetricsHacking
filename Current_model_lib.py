@@ -57,6 +57,7 @@ class enhance_Identity():
         return self.forward(X)
     def to(self, device):
         return self
+
 enhance_Identity = enhance_Identity()
 class codec_Identity(nn.Module):
     def __init__(self):
@@ -450,19 +451,19 @@ class RateDistortionLoss(nn.Module):
         N, _, H, W = target.size()
         out = {}
         num_pixels = N * H * W
-        out["mse_loss"] = self.mse(output["x_hat"], target)
+        out["mse"] = self.mse(output["x_hat"], target)
         try:
             out["bpp_loss"] = sum(
             (torch.log(likelihoods).sum() / (-math.log(2) * num_pixels))
             for likelihoods in output["likelihoods"].values()
             )
-            out["loss_classic"] = self.lmbda * 255 ** 2 * out["mse_loss"] + out["bpp_loss"]
+            out["loss_classic"] = self.lmbda * 255 ** 2 * out["mse"] + out["bpp_loss"]
         except Exception:
             pass
         return out
 
 class Custom_enh_Loss(nn.Module):
-    def __init__(self, lmbda=1e-2, device = device, target_lst = ["VSFA", "mse_loss"], k_lst = [1, 2000.], to_train = True, crop_NIMA = True, to_crop_koniq = False):
+    def __init__(self, lmbda=1e-2, device = device, target_lst = ["VSFA", "mse"], k_lst = [1, 2000.], to_train = True, crop_NIMA = True, to_crop_koniq = False):
         super().__init__()
         self.k_lst = k_lst
         self.target_lst = target_lst
@@ -538,7 +539,7 @@ class Custom_enh_Loss(nn.Module):
         if X_out['x_hat'].device != Y.device:
             X_out['x_hat'] = X_out['x_hat'].to(device)
         self.loss = self.rdLoss(X_out, Y)
-        self.loss['PSNR'] = 10 * torch.log10(1. / self.loss['mse_loss'])
+        self.loss['PSNR'] = 10 * torch.log10(1. / self.loss['mse'])
         if "LPIPS" in self.target_lst:
             self.loss["LPIPS"] = self.lpips(X_out['x_hat'], Y)
         if "SSIM" in self.target_lst:

@@ -57,6 +57,36 @@ class enhance_Identity():
         return self.forward(X)
     def to(self, device):
         return self
+def calculate_met(loss_calc, times = 1):
+    
+    logs_plot_cur1 = {}
+    logs_plot1 = {}
+    for to_train in [True, False]:
+        tqdm_dataset = tqdm(dataset_train if to_train else dataset_test)
+        for frame in tqdm_dataset:
+            if not optimize_image:
+                X = frame.to(device)
+                Y = X.clone().detach().to(device)
+            X_enhance = enhance_Identity(X)
+            X_enhance.data.clamp_(min=0,max=1)
+            X_out = net_codec.forward(X_enhance)
+            X_out['x_hat'].data.clamp_(min=0,max=1)
+            loss = loss_calc(X_out, Y)
+            for j in list(loss.keys()):
+                j_converted = j + ("_test" if not to_train else "")
+                if not j_converted in logs_plot_cur1:
+                    logs_plot_cur1[j_converted] = []
+                logs_plot_cur1[j_converted].append(loss[j].data.to("cpu").numpy())
+        for t in range(times):
+            for j in list(logs_plot_cur1.keys()):
+                if not j in logs_plot1:
+                    logs_plot1[j] = []
+                logs_plot1[j].append(np.mean(logs_plot_cur1[j]))
+                if use_wandb:
+                    wandb.log({j: np.mean(logs_plot_cur1[j])})
+    if use_wandb:
+        wandb.log({"Compressed": wandb.Image(X_out['x_hat']),  "GT": wandb.Image(Y)}) 
+    return logs_plot1
 
 enhance_Identity = enhance_Identity()
 class codec_Identity(nn.Module):
@@ -317,7 +347,43 @@ class paq2piq_model(nn.Module):#OK
                 global_score_batch += global_score
             global_score_batch = global_score_batch / batch_sz /100.
         return global_score_batch
-
+class Net_alike_to_nr(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding="same"),
+                nn.ReLU(inplace=True),)
+        self.seq2 = nn.Sequential(
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.ReLU(inplace=True),
+            nn.Conv2d(16, 32, (3,3), padding="same"),
+                nn.ReLU(inplace=True),
+            nn.Conv2d(32, 16, (3,3), padding="same"),
+                nn.ReLU(inplace=True),)
+        self.seq3 = nn.Sequential(
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.ReLU(inplace=True),
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.ReLU(inplace=True),
+            )
+        self.seq4 = nn.Sequential(
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.ReLU(inplace=True),
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.ReLU(inplace=True),
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.ReLU(inplace=True),)
+        self.seq5 = nn.Sequential(nn.Conv2d(16, 3, (3,3), padding="same"),
+                nn.ReLU(inplace=True))
+        
+    def forward(self, inputX):    
+        x = self.seq1(inputX)
+        x1 = x
+        x = self.seq2(x) + x
+        x = self.seq3(x) + x
+        x = self.seq4(x) + x
+        x = x1 + x
+        x = self.seq5(x)
+        return x
 class ResNetUNet(nn.Module):
     def __init__(self, n_class):
         super().__init__()
@@ -630,7 +696,6 @@ class Video_reader_read():
 def pltimshow(arg):
     plt.imshow(arg.cpu().detach().numpy().swapaxes(1,3).swapaxes(1,2)[0])
 
-
 def pltimshow_batch(args, filename = "vis/tmp.png"):
     plt.figure(dpi = 800)
     Ar2 = None
@@ -674,6 +739,8 @@ class Video_reader_dataset(Dataset):
             self.datalen = self.datalen // minimal_batch_sz * minimal_batch_sz
     def __len__(self):
         return self.datalen
+    def close(self):
+        self.temp_reader1.close()
     def __getitem__(self, idx):
         if idx >= self.datalen:
             self.temp_reader1.close()

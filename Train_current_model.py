@@ -7,6 +7,10 @@ except Exception:
 if use_wandb:
     import wandb
     wandb.init(project="White box training", entity="havent_invented", name="Tests White box full-reference training", tags = {"Train"}, save_code = True)
+    try:
+        config_dictionary
+    except Exception:
+        config_dictionary = {}
     wandb.config.update(config_dictionary)
 sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
 exec(open('main.py').read())#MAIN
@@ -132,6 +136,31 @@ wandb.watch(net_enhance, log='all')
 #wandb.watch(net_codec, log='all')
 wandb.watch(loss_calc, log='all')
 logs_plot_min = 1000000
+break_flag = True
+def calculate_met(times = 1):
+    for to_train in [True, False]:
+        tqdm_dataset = tqdm(dataset_train if to_train else dataset_test)
+        for frame in tqdm_dataset:
+            if not optimize_image:
+                X = frame.to(device)
+                Y = X.clone().detach().to(device)
+            X_enhance = enhance_Identity(X)
+            X_enhance.data.clamp_(min=0,max=1)
+            X_out = net_codec.forward(X_enhance)
+            X_out['x_hat'].data.clamp_(min=0,max=1)
+            loss = loss_calc(X_out, Y)
+            for j in list(loss.keys()):
+                j_converted = j + ("_test" if not to_train else "")
+                if not j_converted in logs_plot_cur:
+                    logs_plot_cur[j_converted] = []
+                logs_plot_cur[j_converted].append(loss[j].data.to("cpu").numpy())
+        for t in range(times):
+            for j in list(logs_plot_cur.keys()):
+                if not j in logs_plot:
+                    logs_plot[j] = []
+                logs_plot[j].append(np.mean(logs_plot_cur[j]))
+        return logs_plot
+
 for epoch in tqdm(range(max_epoch)):
     if break_flag == True:
         break

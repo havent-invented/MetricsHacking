@@ -17,17 +17,12 @@ except Exception:
 from PIL import Image
 import torch
 import numpy as np
-def axis_swaper(func):
-    def wrapper(*args):
-        args = np.swapaxes(args[0],0 , -1), *args[1:]
-        return np.swapaxes(func(*args),0, -1)
-    return wrapper
-home_dir = "/home/max/Ram/tonemap/"
-prev = ''
-cdir = "/home/max/driveE/VMAF_METRIX/CVPR_results/dataset_CC_10/"
-dst_dir = "/home/max/driveE/VMAF_METRIX/CVPR_results/dataset_CC_10/"
-
-home_dir = "/home/max/Ram/tonemap/"
+#home_dir = "/home/max/Ram/tonemap/"
+#prev = ''
+#cdir = "/home/max/driveE/VMAF_METRIX/CVPR_results/dataset_CC_10/"
+#dst_dir = "/home/max/driveE/VMAF_METRIX/CVPR_results/dataset_CC_10/"
+#
+#home_dir = "/home/max/Ram/tonemap/"
 
 from tqdm.notebook import tqdm
 import skimage
@@ -65,7 +60,7 @@ def axis_swaper(func):
     return wrapper
 
 from skimage.metrics import mean_squared_error
-
+"""
 class calc_met:#    
     def __init__(self,dataset1 = ["Run439.Y4M"], func1 = Identity, convKer1 = None, home_dir1 = "R:/", creat_dir = False, calc_SSIM_PSNR = False, calc_model_features = False, model = "vmaf_v063" , codec = None,dataset_dir = "dataset/"):
         "Init env"
@@ -176,11 +171,11 @@ class calc_met:#
         
     def get_metrix2(self, args):
 
-        """
+        '''
         args is a list of args. [[arg_for_first], [arg_for_second],...]
         Return value:
         WARNING: if one_batch == False, Proxy metrics is callculated on the last frame only
-        """
+        '''
         ret = 1
         self.per_frame_args = []
         retGT = 1
@@ -214,3 +209,4 @@ class calc_met:#
         return (retval,)
     
     
+"""

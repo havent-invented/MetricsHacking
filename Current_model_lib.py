@@ -1,5 +1,6 @@
 import sys
-
+if not "device" in cfg["run"]:
+    device = "cuda:0"
 if 0:
     import torchvision
     import torch
@@ -17,7 +18,6 @@ from compressai.zoo import bmshj2018_factorized, cheng2020_attn, mbt2018#,ssf202
 import torch
 from PIL import Image
 import torchvision.transforms
-import torch
 import skvideo.io
 from PIL import Image
 import numpy as np
@@ -32,9 +32,9 @@ import numpy as np
 from torch import nn
 import torch.optim as optim
 try:
-    patch_sz
+    cfg['general']['patch_sz']
 except Exception:
-    patch_sz = 256
+    cfg['general']['patch_sz'] = 256
 dst_dir_vimeo = 'P:/vimeo_triplet/sequences/'
 try:
     dst_dir
@@ -130,7 +130,7 @@ import h5py
 
 
 class koniq(nn.Module):# TODO: FIX  inference
-    def __init__(self, model_dir ="E:/VMAF_METRIX/NeuralNetworkCompression/koniq/", device = device, to_train = True, to_crop = False):
+    def __init__(self, model_dir ="E:/VMAF_METRIX/NeuralNetworkCompression/koniq/", device = cfg["run"]["device"], to_train = True, to_crop = False):
         super().__init__()
         import sys
         sys.path.insert(1, model_dir)
@@ -174,7 +174,7 @@ class koniq(nn.Module):# TODO: FIX  inference
         if to_train:
             for i in self.parameters():
                 i.requires_grad_(True)
-    def forward(self, im, device = device):
+    def forward(self, im, device = cfg["run"]["device"]):
         """patch size must be >= (299,299), batch_sz >= 2"""
         with self.train_eval_mode():
             if self.to_crop:
@@ -185,7 +185,7 @@ class koniq(nn.Module):# TODO: FIX  inference
 import torch.nn as nn
 from torchvision.transforms.functional import resize, to_tensor, normalize
 class Linearity(nn.Module):
-    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/LinearityIQA/LinearityIQA/", device = device, to_train = True):
+    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/LinearityIQA/LinearityIQA/", device = cfg["run"]["device"], to_train = True):
         super().__init__()
         if to_train:
             self.train_eval_mode = torch.enable_grad
@@ -204,7 +204,7 @@ class Linearity(nn.Module):
         if to_train:
             self.requires_grad_(True)
         self.eval()
-    def forward(self, im, device = device):
+    def forward(self, im, device = cfg["run"]["device"]):
         im = normalize(im, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         with self.train_eval_mode():
             y = self.model(im)
@@ -212,7 +212,7 @@ class Linearity(nn.Module):
         return val / 100.
     
     
-def Linearity_met(im, device = device,  model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/LinearityIQA/LinearityIQA/", to_train = True):
+def Linearity_met(im, device = cfg["run"]["device"],  model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/LinearityIQA/LinearityIQA/", to_train = True):
     sys.path.insert(1, model_dir)
     from IQAmodel import IQAModel
     model = IQAModel().to(device) 
@@ -226,7 +226,7 @@ def Linearity_met(im, device = device,  model_dir = "E:/VMAF_METRIX/NeuralNetwor
     return -(y[-1] * k[-1] + b[-1]).mean() / 100.
 
 class NIMA(nn.Module):
-    def __init__(self, model_dir ="E:/VMAF_METRIX/NeuralNetworkCompression/Neural-IMage-Assessment/", device = device, crop = False, to_train = True):
+    def __init__(self, model_dir ="E:/VMAF_METRIX/NeuralNetworkCompression/Neural-IMage-Assessment/", device = cfg["run"]["device"], crop = False, to_train = True):
         super().__init__()
         if to_train:
             self.train_eval_mode = torch.enable_grad
@@ -244,7 +244,7 @@ class NIMA(nn.Module):
         self.eval()
         for i in self.parameters():
             i.requires_grad_(True)
-    def forward(self, im, device = device):
+    def forward(self, im, device = cfg["run"]["device"]):
         transforms = torchvision.transforms
         with self.train_eval_mode():
             if self.crop:
@@ -267,7 +267,7 @@ class NIMA(nn.Module):
     
 
 class VSFA_loss(nn.Module):#TODO: check [0][0]
-    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/VSFA/VSFA/", device = device, to_train = True):
+    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/VSFA/VSFA/", device = cfg["run"]["device"], to_train = True):
         super().__init__()
         import sys
         sys.path.insert(1, model_dir)
@@ -282,7 +282,7 @@ class VSFA_loss(nn.Module):#TODO: check [0][0]
         self.model.load_state_dict(torch.load(model_dir + "models/VSFA.pt"))
         self.model.eval()
         self.model.to(device)
-    def forward(self, X_sample, device = device):
+    def forward(self, X_sample, device = cfg["run"]["device"]):
         with self.train_eval_mode():
             self.features = self.get_features(X_sample, frame_batch_size = len(X_sample), device=device)
             self.features = torch.unsqueeze(self.features, 0)  # batch size 1
@@ -291,7 +291,7 @@ class VSFA_loss(nn.Module):#TODO: check [0][0]
         return outputs[0][0]
 from piq import PieAPP
 class BRISQ(nn.Module):
-    def __init__(self, device = device, to_train = True):
+    def __init__(self, device = cfg["run"]["device"], to_train = True):
         super().__init__()
         from piq import BRISQUELoss
         if to_train:
@@ -307,7 +307,7 @@ class BRISQ(nn.Module):
         return val
 
 class SPAQ(nn.Module):#OK
-    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/SPAQ", device = device, to_train = True):
+    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/SPAQ", device = cfg["run"]["device"], to_train = True):
         super().__init__()
         if to_train:
             self.train_eval_mode = torch.enable_grad
@@ -317,13 +317,13 @@ class SPAQ(nn.Module):#OK
         from BL_demo import Demo#Changed map_location
         self.dm = Demo("", checkpoint_dir='E:/VMAF_METRIX/NeuralNetworkCompression/SPAQ/weights/BL_release.pt', device = device )
         self.dm.model = self.dm.model.to(device)
-    def forward(self, im, device = device):
+    def forward(self, im, device = cfg["run"]["device"]):
         with self.train_eval_mode():
             score_1 = self.dm.model(im).mean()
         return score_1 / 100.
 
 class paq2piq_model(nn.Module):#OK
-    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/paq2piq/", device = device, blk_size = None, to_train = True):
+    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/paq2piq/", device = cfg["run"]["device"], blk_size = None, to_train = True):
         super().__init__()
         import sys
         sys.path.insert(1,model_dir)
@@ -336,7 +336,7 @@ class paq2piq_model(nn.Module):#OK
         if blk_size != None:
             self.model.blk_size = blk_size
         
-    def forward(self, X_sample, device = device):
+    def forward(self, X_sample, device = cfg["run"]["device"]):
         with self.train_eval_mode():
             batch_sz = len(X_sample)
             global_score_batch = 0
@@ -347,7 +347,7 @@ class paq2piq_model(nn.Module):#OK
                 global_score_batch += global_score
             global_score_batch = global_score_batch / batch_sz /100.
         return global_score_batch
-class Net_alike_to_nr(nn.Module):
+class smallnet(nn.Module):
     def __init__(self):
         super().__init__()
         self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding="same"),
@@ -472,7 +472,7 @@ from piq import LPIPS as piq_LPIPS#PieAPP VSI, FSIM, NLPD, deepIQA
 from piq import DISTS as piq_DISTS
 import IQA_pytorch as iqa#SSIM, GMSD, LPIPSvgg, DISTS
 class calc_met:
-    def __init__(self,dataset1 = ["Run439.Y4M"], convKer1 = None, home_dir1 = "R:/", creat_dir = False, calc_SSIM_PSNR = False, calc_model_features = False,device = device, model = "vmaf_v063" , codec = '   -preset:v medium -x265-params log-level=error ',dataset_dir = "dataset/", to_train = True):
+    def __init__(self,dataset1 = ["Run439.Y4M"], convKer1 = None, home_dir1 = "R:/", creat_dir = False, calc_SSIM_PSNR = False, calc_model_features = False,device = cfg["run"]["device"], model = "vmaf_v063" , codec = '   -preset:v medium -x265-params log-level=error ',dataset_dir = "dataset/", to_train = True):
         self.device = device
         if to_train:
             self.train_eval_mode = torch.enable_grad
@@ -529,7 +529,7 @@ class RateDistortionLoss(nn.Module):
         return out
 
 class Custom_enh_Loss(nn.Module):
-    def __init__(self, lmbda=1e-2, device = device, target_lst = ["VSFA", "mse"], k_lst = [1, 2000.], to_train = True, crop_NIMA = True, to_crop_koniq = False):
+    def __init__(self, lmbda=1e-2, device = cfg["run"]["device"], target_lst = ["VSFA", "mse"], k_lst = [1, 2000.], to_train = True, crop_NIMA = True, to_crop_koniq = False):
         super().__init__()
         self.k_lst = k_lst
         self.target_lst = target_lst
@@ -772,9 +772,9 @@ class CustomImageDataset(Dataset):
             image = torch.cat([image for i in range(3)])
         self.image = image
         if self.center_crop:
-            self.image = torchvision.transforms.CenterCrop((patch_sz,patch_sz))(self.image)
+            self.image = torchvision.transforms.CenterCrop((cfg['general']['patch_sz'], cfg['general']['patch_sz']))(self.image)
         else:
-            self.image = torchvision.transforms.RandomResizedCrop((patch_sz,patch_sz))(self.image)
+            self.image = torchvision.transforms.RandomResizedCrop((cfg['general']['patch_sz'],cfg['general']['patch_sz']))(self.image)
         return self.image / 255.
 
 def get_met(X):

@@ -11,13 +11,13 @@ parser = argparse.ArgumentParser(description='Tuning to metrics')
 parser.add_argument(
     '-datalentrain',
     type=int,
-    default = 11000,
+    default = None,
     help='Dataset size for train'
 )
 parser.add_argument(
     '-datalentest',
     type=int,
-    default = 400,
+    default = None,
     help='Dataset size for test'
 )
 parser.add_argument(
@@ -29,76 +29,94 @@ parser.add_argument(
 parser.add_argument(
     '-proxy',
     type=str,
-    default = "mse",
+    default = None,
     help='provide proxy name'
+)
+parser.add_argument(
+    '-name',
+    type=str,
+    default = None,
+    help='Name'
 )
 parser.add_argument(
     '-k',
     type=int,
-    default = 0,
+    default = None,
     help='k for mse'
 )
 parser.add_argument(
     '-codec',
     type=str,
-    default = "cheng2020_attn_quality2",
+    default = None,
     help='Choose codec'
 )
 parser.add_argument(
     '-enhance',
     type=str,
-    default = "None",
+    default = None,
     help='Choose whether to use enhance'
 )
 parser.add_argument(
     '-optimizeimg',
     type = int,
-    default = 0,
+    default = None,
     help='Optimize image'
 )
 parser.add_argument(
     '-quality',
     type = int,
-    default = 3,
+    default = None,
     help='Codec quality'
 )
 parser.add_argument(
     '-epochs',
     type=int,
-    default = 12,
+    default = None,
     help='Number of epochs'
 )
 parser.add_argument(
     '-patchsz',
     type=int,
-    default = 256,
+    default = None,
     help='Patch size'
 )
 parser.add_argument(
     '-batchsz_train',
     type=int,
-    default = 4,
+    default = None,
     help='Train batch size'
 )
 parser.add_argument(
     '-batchsz_test',
     type=int,
-    default = 4,
+    default = None,
     help='Test batch size'
 )
+parser.add_argument(
+    '-cfg_dir',
+    type=str,
+    default = "",
+    help='Config file'
+)
+
 args_p = parser.parse_args()
+import yaml
+from types import SimpleNamespace
 
-met_name = args_p.met
-print(met_name)
-
+if 1 or args_p.cfg_dir != "cfg.yaml":
+    with open(args_p.cfg_dir) as fh:
+        cfg = yaml.load(fh, Loader=yaml.FullLoader)
+        cfg["general"]["cfg_dir"] = args_p.cfg_dir
+        #cfg = SimpleNamespace(**cfg)
+if args_p.met != None:
+    cfg["general"]["met_names"] =[args_p.met,]
 
 exec(open('Current_model_lib.py').read())
-if args_p.k != 0:
-    target_lst = [met_name, args_p.proxy]
-    k_lst = [1, args_p.k]
-else:
-    target_lst = [met_name]
-    k_lst = [1]
+if args_p.k != None:
+    cfg["general"]["met_names"] = [args_p.met, args_p.proxy]
+    cfg["general"]["k_lst"] = [1, args_p.k]
+
+"""
 if args_p.patchsz != 256:
     patch_sz = args_p.patchsz
 elif target_lst[0] == "NIMA":
@@ -107,39 +125,37 @@ elif target_lst[0] == "KONIQ":
     patch_sz = 299
 else:
     patch_sz = 256
+"""
 
-
-loss_calc = Custom_enh_Loss(target_lst = target_lst, k_lst=k_lst)
-loss_calc = loss_calc.eval().requires_grad_(True).to(device)
-
-max_epoch = args_p.epochs
+if args_p.epochs != None:
+    cfg["general"]["max_epoch"] = args_p.epochs
+if args_p.name != None:
+    cfg["general"]["name"] = args_p.name
 if args_p.codec == "cheng2020_attn_quality2":
-    net_codec = None #codec_Identity
+    cfg["general"]['codec'] = None #codec_Identity
 elif args_p.codec == "No":
-    net_codec = codec_Identity
+    cfg["general"]['codec'] = codec_Identity
 else:
-    net_codec = None
+    cfg["general"]['codec'] = None
 
-save_filename = "vimeo11k_" + target_lst[0] + "_" + ("cheng2020_attn_quality2" if net_codec == None else "no_codec") + "_FRtuning"
-batch_size_train = args_p.batchsz_train
-batch_size_test = args_p.batchsz_test
+if args_p.batchsz_train != None:
+    cfg["general"]['batch_size_train']= args_p.batchsz_train
+if args_p.batchsz_test != None:
+    cfg["general"]['batch_size_test'] = args_p.batchsz_test
 
-if args_p.enhance == "None":
-    net_enhance = None
-elif args_p.enhance == "Identity":
-    net_enhance = enhance_Identity
+if args_p.enhance != None:
+    cfg["general"]['enhance_net'] = args_p.enhance
+    if args_p.enhance == "Identity":
+        cfg["run"]['net_enhance'] = enhance_Identity
+
 save_net_enhance = True
-datalen_test = args_p.datalentest
-datalen_train = args_p.datalentrain
-optimize_image = args_p.optimizeimg
-config_dictionary = { "datalen_test" : datalen_test,
-    "datalen_train" : datalen_train,
-    "batch_size_train" : batch_size_train,
-    "datalen_test" : datalen_test,
-    "save_filename" : save_filename,
-    "codec" : args_p.codec,
-    "k_lst": k_lst,
-    "met_name":met_name,
-    "max_epoch": max_epoch}
+if args_p.datalentest != None:
+    cfg["general"]["datalen_test"] = args_p.datalentest
+if args_p.datalentrain != None:
+    cfg["general"]["datalen_train"] = args_p.datalentrain
+if  args_p.optimizeimg != None:
+     cfg["general"]["optimize_image"] = args_p.optimizeimg
 
+if args_p.patchsz != None:
+    cfg["general"]['patch_sz'] = args_p.patchsz
 exec(open('Train_current_model.py').read())

@@ -1,17 +1,21 @@
 tmp = None
-device = 'cpu'
-device_met = "cuda:0"
-device_enh = "cuda:0"
-device_sub = "cpu"
-home_dir = "R:/home_dir/"
+cfg["run"]["device"] = 'cpu'
+cfg["run"]["device_met"] = "cuda:0"
+cfg["run"]["device_enh"] = "cuda:0"
+cfg["general"]["minimal_batch_sz"] = 2
+cfg["run"]["device_sub"] = "cpu"
+cfg["general"]["home_dir"] = "R:/home_dir/"
+cfg["general"]["batch_size_test"] = 1#4
+cfg["general"]["num_frames"] = 64
 dst_dir = "P:/7videos/"
+dst_dir_vimeo = 'P:/vimeo_triplet/sequences/'
 exec(open('main.py').read())
-home_dir = "R:/home_dir/"
-dst_dir = "P:/7videos/"
+
 try:
-    os.mkdir(home_dir)
+    os.mkdir(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"]))
 except Exception:
     pass
+
 X_out1 = None
 import compressai
 import math
@@ -34,14 +38,13 @@ from torch import nn
 import torch.optim as optim
 
 from torch.utils.data import Dataset, IterableDataset
-dst_dir_vimeo = 'P:/vimeo_triplet/sequences/'
+
 from torchvision.io import read_image
 from torch.utils.data import DataLoader
 import os
 import torchvision
 
-patch_sz = 256   
-batch_sz = 1#4
+
 net_enhance = None
 
 def load_models(paths):
@@ -55,16 +58,16 @@ def load_models(paths):
         model_list[-1].load_state_dict(torch.load(path)) 
     return model_list
 
-def compute_model_codec_dataset(net_enhance, net_codec, dataset, loss_f = Custom_enh_Loss(target_lst=['mse'],k_lst=[1,]), to_crop = True, Y_dataset = None, vid_full_dir = None):
+def compute_model_codec_dataset(net_enhance, net_codec, dataset, cfg, Y_dataset = None, vid_full_dir = None):
     logs_plot_cur = {}
     
     #new code
     if vid_full_dir != None:
-        dataset = Video_reader_dataset(name1 = vid_full_dir, num_frames = num_frames, minimal_batch_sz = 2)   
-        dataset = DataLoader(dataset, batch_size= batch_sz, shuffle = False)
+        dataset = Video_reader_dataset(name1 = vid_full_dir, num_frames = cfg["general"]["num_frames"], minimal_batch_sz = cfg["general"]["minimal_batch_sz"])   
+        dataset = DataLoader(dataset, batch_size= cfg["general"]["batch_size_test"], shuffle = False)
 
     
-    net_codec, loss_f = net_codec.to(device_sub),  loss_f.to(device_sub)
+    net_codec, cfg["run"]["loss_calc"] = net_codec.to(cfg["run"]["device_sub"]),  cfg["run"]["loss_calc"].to(cfg["run"]["device_sub"])
     XY_flag = False
     if Y_dataset != None:
         frame_XY_all = (dataset, Y_dataset)
@@ -72,33 +75,35 @@ def compute_model_codec_dataset(net_enhance, net_codec, dataset, loss_f = Custom
         frame_XY_all = (dataset, range(len(dataset)))
     for XY_frame in tqdm(zip(*frame_XY_all)):
         X = XY_frame[0]
-        if to_crop:
-            X = torchvision.transforms.CenterCrop((patch_sz, patch_sz))(X)
-        X = X.detach().to(device_met)
+        if cfg["general"]["to_crop"]:
+            X = torchvision.transforms.CenterCrop((cfg["general"]["patch_sz"], cfg["general"]["patch_sz"]))(X)
+        X = X.detach().to(cfg["run"]["device_met"])
         if Y_dataset == None:
-            Y = X.detach().clone().to(device_met)
+            Y = X.detach().clone().to(cfg["run"]["device_met"])
         else:
-            Y = XY_frame[1].to(device_met)
-        if to_crop:
-            Y = torchvision.transforms.CenterCrop((patch_sz, patch_sz))(Y)
-        X, net_enhance = X.to(device_enh), net_enhance.to(device_enh)
+            Y = XY_frame[1].to(cfg["run"]["device_met"])
+        if cfg["general"]["to_crop"]:
+            Y = torchvision.transforms.CenterCrop((cfg["general"]["patch_sz"], cfg["general"]["patch_sz"]))(Y)
+        X, net_enhance = X.to(cfg["run"]["device_enh"]), net_enhance.to(cfg["run"]["device_enh"])
         X_enhance = net_enhance(X)
-        X, net_enhance = X.to(device_sub), net_enhance.to(device_sub)
+        X, net_enhance = X.to(cfg["run"]["device_sub"]), net_enhance.to(cfg["run"]["device_sub"])
         torch.cuda.empty_cache()
-        X_enhance, net_codec = X_enhance.to(device_met), net_codec.to(device_met)
+        X_enhance, net_codec = X_enhance.to(cfg["run"]["device_met"]), net_codec.to(cfg["run"]["device_met"])
         X_out = net_codec(X_enhance)
-        net_codec = net_codec.to(device_sub)
+        X_out["x_hat"] = X_out["x_hat"][..., :X_enhance.shape[-2], :X_enhance.shape[-1]]
+        net_codec = net_codec.to(cfg["run"]["device_sub"])
         torch.cuda.empty_cache()
-        tmp = X_out, Y, loss_f
-        loss_f = loss_f.to(device_met)
-        Y = Y.to(device_met)
-        loss = loss_f(X_out, Y)
-        loss_f = loss_f.to(device_sub)
+        
+        cfg["run"]["loss_calc"] = cfg["run"]["loss_calc"].to(cfg["run"]["device_met"])
+        Y = Y.to(cfg["run"]["device_met"])
+        cfg["run"]["tmp"] = X_enhance, X_out['x_hat'], Y
+        loss = cfg["run"]["loss_calc"](X_out, Y)
+        cfg["run"]["loss_calc"] = cfg["run"]["loss_calc"].to(cfg["run"]["device_sub"])
         
         for j in list(loss.keys()):
             if not j in logs_plot_cur:
                 logs_plot_cur[j] = []
-            logs_plot_cur[j].append(loss[j].data.to(device_sub).numpy())
+            logs_plot_cur[j].append(loss[j].data.to(cfg["run"]["device_sub"]).numpy())
         X.data.clamp_(min=0,max=1)
         X_out['x_hat'].data.clamp_(min=0,max=1)
     for j in list(logs_plot_cur.keys()):
@@ -115,21 +120,21 @@ def append_dict(dict_from, dict_to):
         dict_to[j].append(np.mean(dict_from[j]))    
     return dict_to
     
-def model_codecs_dataset(net_enhance, net_codecs, dataset, loss_f = Custom_enh_Loss(target_lst=['mse'],k_lst=[1,]), vid_full_dir = None, to_crop=True):
+def model_codecs_dataset(net_enhance, net_codecs, dataset, cfg, vid_full_dir = None):
     logs_plot = {}
     for net_codec in net_codecs:
-        net_codec_gpu = net_codec.to(device_met)
-        net_enhance_gpu = net_enhance.to(device_met)
-        logs_plot_cur = compute_model_codec_dataset(net_enhance_gpu, net_codec_gpu, dataset, loss_f = Custom_enh_Loss(target_lst=['mse'],k_lst=[1,]), vid_full_dir = vid_full_dir, to_crop=to_crop)
+        net_codec_gpu = net_codec.to(cfg["run"]["device_met"])
+        net_enhance_gpu = net_enhance.to(cfg["run"]["device_met"])
+        logs_plot_cur = compute_model_codec_dataset(net_enhance_gpu, net_codec_gpu, dataset, cfg, vid_full_dir = vid_full_dir)
         logs_plot = append_dict(logs_plot_cur, logs_plot)
         del net_codec_gpu
         del net_enhance_gpu 
     return logs_plot
     
-def models_codecs_dataset(net_enhances, net_codecs, dataset, loss_f = Custom_enh_Loss(target_lst=['mse'],k_lst=[1,]), vid_full_dir = None, to_crop = True):
+def models_codecs_dataset(net_enhances, net_codecs, dataset, cfg, vid_full_dir = None):
     logs_plot = []
     for net_enhance in net_enhances:
-        logs_plot_cur = model_codecs_dataset(net_enhance, net_codecs, dataset, loss_f = Custom_enh_Loss(target_lst=['mse'],k_lst=[1,]), vid_full_dir = vid_full_dir, to_crop=to_crop)
+        logs_plot_cur = model_codecs_dataset(net_enhance, net_codecs, dataset, cfg, vid_full_dir = vid_full_dir)
         logs_plot.append(logs_plot_cur)
     return logs_plot    
 
@@ -139,7 +144,7 @@ def compare_models(models, net_codec, dataset):
     with torch.no_grad():
         logs_plot = {}
         for model in models:
-            logs_plot_cur = compute_model_codec_dataset(model, net_codec, dataset)
+            logs_plot_cur = compute_model_codec_dataset(model, net_codec, dataset, cfg)
             for j in list(logs_plot_cur.keys()):
                 if not j in logs_plot:
                     logs_plot[j] = []
@@ -149,7 +154,7 @@ def compare_models(models, net_codec, dataset):
 
 #on videos
 class codec_outer_raw():
-    def __init__(self, device = device, home_dir = home_dir, output_dir = None, codec = None):
+    def __init__(self, device = cfg["run"]["device"], home_dir = cfg["general"]["home_dir"], output_dir = None, codec = None):
         import pickle
         self.codec = codec
         self.device = device
@@ -162,7 +167,7 @@ class codec_outer_raw():
     def forward(self, X):
         if self.out1 == None:
             self.out1 = skvideo.io.FFmpegWriter(self.output_dir ,inputdict = {"-pix_fmt": "rgb24"}, outputdict = {"-pix_fmt": "yuv420p"})
-        for img in X.to(device_sub).detach().numpy().swapaxes(1,3).swapaxes(1,2):
+        for img in X.to(cfg["run"]["device_sub"]).detach().numpy().swapaxes(1,3).swapaxes(1,2):
             if img.max() < 2.:
                 img = img * 255
             self.out1.writeFrame(img)
@@ -196,55 +201,28 @@ class codec_outer_compress:
     def forward(self):#-c:v mjpeg 
         os.system("ffmpeg -hide_banner -loglevel error -y -i " + self.input_dir + " " + self.codec + "  -pix_fmt yuv420p " + self.compressed_dir)
         os.system("ffmpeg -hide_banner -loglevel error -y -i " + self.input_dir + " " + self.codec + "  -pix_fmt yuv420p  " + self.compressed_dir)
-        os.system("ffmpeg -hide_banner -loglevel error -y  -i " + self.compressed_dir + " -pix_fmt yuv420p " + self.output_dir)
+        os.system("ffmpeg -hide_banner -loglevel error -y -i " + self.compressed_dir + " -pix_fmt yuv420p " + self.output_dir)
         self.bitrate = int(skvideo.io.ffprobe(self.compressed_dir)['video']['@bit_rate']) / 10**6
     def get_bitrate(self):
         return self.bitrate
     def __call__(self):
         return self.forward()
-    
+   
 
-class Video_reader_dataset(Dataset):
-    def __init__(self, num_frames = None, name1 = dst_dir + "blue_hair_1920x1080_30.yuv.Y4M", minimal_batch_sz = 0):
-        super(CustomImageDataset).__init__()
-        self.nameGT = name1
-        self.temp_reader1 = skvideo.io.FFmpegReader(self.nameGT, outputdict={"-c:v" :" rawvideo","-f": "rawvideo"})
-        self.datalen = self.temp_reader1.getShape()[0]
-        #self.datagenGT = [frameGT / 255. for frameGT in self.temp_reader1.nextFrame()]
-        self.datagenGT = self.temp_reader1.nextFrame()# [frameGT / 255. for frameGT in ]
-        #self.temp_reader1.close()
         
-        if num_frames != None:
-            self.datalen = min(self.datalen, num_frames)
-        if minimal_batch_sz:
-            self.datalen = self.datalen // minimal_batch_sz * minimal_batch_sz
-    def __len__(self):
-        return self.datalen
-    def close(self):
-        self.temp_reader1.close()
-    def __getitem__(self, idx):
-        if idx >= self.datalen:
-            self.temp_reader1.close()
-            raise StopIteration
-        self.frame = next(self.datagenGT) / 255. #self.lst_1[idx]
-        self.frame = np.array([self.frame[:,:,0], self.frame[:,:,1], self.frame[:,:,2]])
-        self.frame = torch.tensor(self.frame).float() 
-        return self.frame 
-        
-def compute_model_codec_dataset_outer(net_enhance_gpu, to_enhance = True, vid_full_dir = None, dataset = None, 
-                                      codec = None, bitrates = None,home_dir = home_dir,  loss_f = Custom_enh_Loss(target_lst=['mse'],k_lst=[1,]), to_crop = False):
+def compute_model_codec_dataset_outer(net_enhance_gpu, cfg, to_enhance = True, vid_full_dir = None, dataset = None, 
+                                      codec = None, bitrates = None,home_dir = cfg["general"]["home_dir"],  ):
     #try:
     #    num_frames
     #except Exception:
         #num_frames = 64
     if to_enhance:
         #if dataset == None:
-        dataset_test = Video_reader_dataset(name1 = vid_full_dir, num_frames = num_frames, minimal_batch_sz = 2)   
-        dataset_test = DataLoader(dataset_test, batch_size= batch_sz, shuffle = False)
-        codec_raw = codec_outer_raw(device = device, codec = codec, 
+        dataset_test = Video_reader_dataset(name1 = vid_full_dir, num_frames = cfg["general"]["num_frames"], minimal_batch_sz = cfg["general"]["minimal_batch_sz"])   
+        dataset_test = DataLoader(dataset_test, batch_size= cfg["general"]["batch_size_test"], shuffle = False)
+        codec_raw = codec_outer_raw(device = cfg["run"]["device"], codec = codec, 
                                     output_dir = os.path.join(home_dir, "0YES.Y4M"))
-        compute_model_codec_dataset(net_enhance_gpu, codec_raw, dataset_test, 
-                                    loss_f = Custom_enh_Loss(target_lst=['mse'],k_lst=[1,]), to_crop=to_crop)
+        compute_model_codec_dataset(net_enhance_gpu, codec_raw, dataset_test, cfg)
         codec_raw.close()
         name1 = dataset_test.dataset.nameGT
         datalen1 = dataset_test.dataset.datalen
@@ -252,51 +230,48 @@ def compute_model_codec_dataset_outer(net_enhance_gpu, to_enhance = True, vid_fu
         dataset_test.dataset.close()
         del dataset_test
         dataset_test = None
-    dataset_test = Video_reader_dataset(name1 = vid_full_dir, num_frames = num_frames, minimal_batch_sz = 2)
-    dataset_test = DataLoader(dataset_test, batch_size= batch_sz, shuffle = False)
+    dataset_test = Video_reader_dataset(name1 = vid_full_dir, num_frames = cfg["general"]["num_frames"], minimal_batch_sz = cfg["general"]["minimal_batch_sz"])
+    dataset_test = DataLoader(dataset_test, batch_size= cfg["general"]["batch_size_test"], shuffle = False)
     codec_compressor = codec_outer_compress(home_dir = home_dir,
                          codec = codec, input_dir = os.path.join(home_dir, "0YES.Y4M"), 
                                             output_dir = os.path.join(home_dir, "0YES_comp.Y4M"))
     codec_compressor()
-    dataset_test_comp = Video_reader_dataset(name1 = os.path.join(home_dir, "0YES_comp.Y4M"), num_frames = num_frames)
-    dataset_test_comp = DataLoader(dataset_test_comp, batch_size= batch_sz, shuffle = False)
+    dataset_test_comp = Video_reader_dataset(name1 = os.path.join(home_dir, "0YES_comp.Y4M"), num_frames = cfg["general"]["num_frames"])
+    dataset_test_comp = DataLoader(dataset_test_comp, batch_size= cfg["general"]["batch_size_test"], shuffle = False)
     logs_plot_cur = compute_model_codec_dataset(enhance_Identity, codec_Identity, dataset_test_comp, 
-                                                loss_f = loss_f, Y_dataset = dataset_test, to_crop = to_crop)
+                                                cfg, Y_dataset = dataset_test)
     logs_plot_cur['bitrate'] = codec_compressor.get_bitrate()
     dataset_test.dataset.close()
     dataset_test_comp.dataset.close()
     return logs_plot_cur
     
-def model_codecs_dataset_outer(net_enhance,vid_full_dir = None,dataset = None, codecs = None, 
-                               bitrates = None,home_dir = home_dir, loss_f = Custom_enh_Loss(target_lst=['mse'],k_lst=[1,]), to_crop = False):
+def model_codecs_dataset_outer(net_enhance, cfg, vid_full_dir = None,dataset = None, codecs = None, 
+                               bitrates = None,home_dir = cfg["general"]["home_dir"], ):
     if codecs == None:
         raise Exception
     logs_plot = {}
     to_enhance = True
     for codec in codecs:
         if to_enhance:
-            net_enhance_gpu = net_enhance.to(device_met)
+            net_enhance_gpu = net_enhance.to(cfg["run"]["device_met"])
         else:
             net_enhance_gpu = None
-        logs_plot_cur = compute_model_codec_dataset_outer(net_enhance_gpu, to_enhance = to_enhance,codec = codec, vid_full_dir = vid_full_dir,
-                                                          dataset = None, loss_f = loss_f, to_crop = to_crop)###
+        logs_plot_cur = compute_model_codec_dataset_outer(net_enhance_gpu, cfg, to_enhance = to_enhance,codec = codec, vid_full_dir = vid_full_dir, dataset = None)###
         to_enhance = True#False
         logs_plot = append_dict(logs_plot_cur, logs_plot)
         del net_enhance_gpu 
     return logs_plot
     
-def models_codecs_dataset_outer(net_enhances,vid_full_dir = None,  dataset = None, codecs = None,
-                                loss_f = Custom_enh_Loss(target_lst=['mse'],k_lst=[1,]), to_crop = False):
+def models_codecs_dataset_outer(net_enhances, cfg, vid_full_dir = None,  dataset = None, codecs = None,
+                                ):
     if type(codecs) == list and type(codecs[0]) != str:
-        return models_codecs_dataset(net_enhances, codecs, dataset, loss_f, vid_full_dir)
+        return models_codecs_dataset(net_enhances, codecs, dataset, cfg, vid_full_dir)
     logs_plot = []
     for net_enhance in net_enhances:
-        logs_plot_cur = model_codecs_dataset_outer(net_enhance, codecs = codecs, dataset = None, loss_f = loss_f, vid_full_dir=vid_full_dir, to_crop = to_crop)
+        logs_plot_cur = model_codecs_dataset_outer(net_enhance,cfg, codecs = codecs, dataset = None, vid_full_dir=vid_full_dir)
         logs_plot.append(logs_plot_cur)
     return logs_plot
   
-home_dir = "R:/home_dir/"
-dst_dir = "P:/7videos/"
 
 def get_met_names(directory = "./models_enhancement/", key = "fixed_direction", force_names = None):
     if force_names != None:
@@ -310,7 +285,7 @@ def get_met_names(directory = "./models_enhancement/", key = "fixed_direction", 
     return model_dir_full, model_target_met_name,model_names
 import matplotlib
 import matplotlib.cm as cm
-dst_dir = "P:/7videos/"
+
 def RD_curves_plot(test_RDcurves, videoname = sorted(os.listdir(dst_dir))[0], save_pgf = False, save_png = False, fig_file = "./vis/RD_curves/", force_names_all = None):        
     import matplotlib.pyplot as plt
     if force_names_all != None:
@@ -352,6 +327,6 @@ def RD_curves_plot(test_RDcurves, videoname = sorted(os.listdir(dst_dir))[0], sa
     fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=None)
     fig.tight_layout() 
     if save_png:
-        plt.savefig(fig_file + '.png',bbox_inches='tight')
+        plt.savefig(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "RDcurves.png"),bbox_inches='tight')
     if save_pgf:
-        plt.savefig(fig_file + '.pgf',bbox_inches='tight')
+        plt.savefig(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "RDcurves.pgf"),bbox_inches='tight')

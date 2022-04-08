@@ -1,0 +1,43 @@
+general : 
+  datalen_test : 400,
+  datalen_train : 11000
+  batch_size_train : 8
+  #4
+  batch_size_test : 4
+  datalen_test : 2 
+  name : vimeo11k_tmp
+  codec : cheng2020_attn_quality2
+  k_lst: [1, ]
+  met_names: ["DISTS"]
+  max_epoch: 12
+  patch_sz : 256
+  enhance : true
+  enhance_net: "Resnet18Unet"
+  quality : 3
+  cfg_dir : "cfg.yaml"
+  logs_dir :  "logs/"
+  dataset_type : "img"
+  home_dir : "R:/home_dir/"
+  dataset_dir : 'P:/vimeo_triplet/sequences/'
+  #"P:/7videos/",  "/home/max/driveE/VMAF_METRIX/CVPR_results/dataset_CC_10/"
+  center_crop : false
+  minimal_batch_sz" : 0
+  project_name : "White box tuning"
+  break_flag : false
+  save_netcodec : false
+  save_net_enhance : true
+  optimize_image : false
+  use_wandb : true
+  optimizer : SGD
+  to_crop : true
+  optimizer_opt:
+      lr : 0.001
+run:
+  device: "cuda:0"
+  device_met : "cuda:0"
+  device_enh : "cuda:0"
+  device_sub : "cpu"
+  
+  net_enhance: null
+  loss_calc : null
+  net_codec : null

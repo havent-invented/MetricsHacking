@@ -10,10 +10,6 @@ from CNNfeatures import get_features
 from VQAmodel import VQAModel
 from argparse import ArgumentParser
 import time
-try:
-    device
-except Exception:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from PIL import Image
 import torch
 import numpy as np
@@ -23,7 +19,6 @@ import numpy as np
 #dst_dir = "/home/max/driveE/VMAF_METRIX/CVPR_results/dataset_CC_10/"
 #
 #home_dir = "/home/max/Ram/tonemap/"
-
 from tqdm.notebook import tqdm
 import skimage
 import skimage.filters

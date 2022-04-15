@@ -1,15 +1,18 @@
 general : 
+  name : vimeo11k_tmp
+  mode: Train
   datalen_test : 400,
   datalen_train : 11000
   batch_size_train : 8
   #4
   batch_size_test : 4
   datalen_test : 2 
-  name : vimeo11k_tmp
   codec : cheng2020_attn_quality2
   k_lst: [1, ]
   met_names: ["DISTS"]
   max_epoch: 12
+  patience: 3
+  lr_linear_stage: 3
   patch_sz : 256
   enhance : true
   enhance_net: "Resnet18Unet"
@@ -30,6 +33,7 @@ general :
   use_wandb : true
   optimizer : SGD
   to_crop : true
+  eta_min: 0.00001
   optimizer_opt:
       lr : 0.001
 run:

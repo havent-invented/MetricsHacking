@@ -3,7 +3,7 @@ import sys
 if cfg["general"]["use_wandb"]:
     import wandb
     wandb.init(project=cfg["general"]["project_name"], entity="havent_invented", name = cfg["general"]["name"], tags = {"Train"}, save_code = True)
-    wandb.config.update(cfg)
+    #wandb.config.update({"general": cfg["general"]})
 sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
 exec(open('main.py').read())#MAIN
 
@@ -13,16 +13,24 @@ cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst =cfg["general"]["met_names"
 if cfg["general"]["enhance_net"] == "Resnet18Unet":
     cfg["run"]["net_enhance"] = ResNetUNet(3).to(cfg["run"]["device"]) 
     #cfg["run"]["net_enhance"] = nn.Sequential(nn.Conv2d(3, 3, 3,1, "same"),)
-    cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"])
+    cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"]).requires_grad_(True)
+    for i in cfg["run"]["net_enhance"].parameters():
+            i.retain_grad()
 elif cfg["general"]["enhance_net"] == "smallnet":
         cfg["run"]["net_enhance"] = smallnet().to(cfg["run"]["device"])
-        cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"])
-
-if (cfg["general"]["enhance_net"] == "smallnet" or cfg["general"]["enhance_net"] == "Resnet18Unet") and not cfg["general"]["break_flag"]:
-    cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].requires_grad_(True)
-    for i in cfg["run"]["net_enhance"].parameters():
-        i.retain_grad()
-if cfg["run"]["net_codec"] == None:
+        cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"]).requires_grad_(True)
+        for i in cfg["run"]["net_enhance"].parameters():
+            i.retain_grad()
+elif cfg["general"]["enhance_net"] == "smallnet_skips":
+        cfg["run"]["net_enhance"] = smallnet_skips().to(cfg["run"]["device"])
+        cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"]).requires_grad_(True)
+        for i in cfg["run"]["net_enhance"].parameters():
+            i.retain_grad()
+            
+            
+if cfg["general"]["codec"] == "No":
+    cfg["run"]["net_codec"] = codec_Identity
+else:
     cfg["run"]["net_codec"] = cheng2020_attn(quality=cfg["general"]["quality"], pretrained=True).to(cfg["run"]["device"]).requires_grad_(True)# ssf2020 -- video
 
 #env = calc_met( model = "MDTVSFA", home_dir1=home_dir,dataset_dir=dst_dir)
@@ -56,12 +64,20 @@ if cfg["general"]["optimize_image"]:
 parameters = set(p for p in cfg["run"]["net_enhance"].parameters()) if not cfg["general"]["optimize_image"] else [X]
 #aux_parameters = set(p for n, p in net_codec.named_parameters() if n.endswith(".quantiles"))
 #aux_loss = net_codec.entropy_bottleneck.loss()
-
-#optimizer = optim.AdamW(parameters, lr=0.0001, weight_decay = 0.01)#
-#optimizer = optim.Adam(parameters, lr=1e-4)
-if cfg["general"]["optimizer"] == "SGD":
+if cfg["general"]["optimizer"] == "AdamW":
+    cfg["run"]["optimizer"] = optim.AdamW(parameters, **cfg["general"]["optimizer_opt"])
+if cfg["general"]["optimizer"] == "Adam":
+    cfg["run"]["optimizer"] = optim.Adam(parameters, **cfg["general"]["optimizer_opt"])
+elif cfg["general"]["optimizer"] == "SGD":
     cfg["run"]["optimizer"] = optim.SGD(parameters, **cfg["general"]["optimizer_opt"])
+
+cfg["run"]["EarlyStopping"] = EarlyStopping(cfg["general"]["patience"], 'min')
+cfg["run"]["SaveBestHandler"] = SaveBestHandler(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"]))
+
 #aux_optimizer = optim.Adam(aux_parameters, lr=1e-3)
+
+
+cfg["run"]["scheduler"] = optim.lr_scheduler.CosineAnnealingLR(cfg["run"]["optimizer"], len(dataset_train) * (cfg["general"]["max_epoch"]-cfg["general"]["lr_linear_stage"]), eta_min = cfg["general"]["eta_min"])
 
 save_result = True
 X_sample = torch.load("sample_data/X.ckpt").to("cpu")
@@ -99,6 +115,9 @@ def calculate_met(times = 1):
                     logs_plot[j] = []
                 logs_plot[j].append(np.mean(logs_plot_cur[j]))
         return logs_plot
+
+cfg["run"]["logger"] = Logger(cfg)
+cfg["run"]["logger"].write_cfg()
 
 for epoch in tqdm(range(cfg["general"]["max_epoch"])):
     if cfg["general"]["break_flag"] == True:
@@ -152,8 +171,10 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
                     if par.grad != None:
                         par.grad = torch.nan_to_num(par.grad)
                 #list(parameters)[0] = torch.nan_to_num(list(parameters)[0])
-                cfg["run"]["optimizer"].step()
-                
+                if gradnorm_cur < 0.025:
+                    cfg["run"]["optimizer"].step()
+                if epoch > cfg["general"]["lr_linear_stage"]:
+                    cfg["run"]["scheduler"].step()
             #loss["aux_loss"] = net_codec.aux_loss()
             #if epoch != 0 and to_train:
                 #loss["aux_loss"].backward()
@@ -164,7 +185,6 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
                 if not j_converted in logs_plot_cur:
                     logs_plot_cur[j_converted] = []
                 logs_plot_cur[j_converted].append(loss[j].data.to("cpu").numpy())
-                    
             #X_enhance.data.clamp_(min=0,max=1)
             #X.data.clamp_(min=0,max=1)
             #X_out['x_hat'].data.clamp_(min=0,max=1)
@@ -200,9 +220,10 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
             if cfg["general"]["save_netcodec"] == True:
                 torch.save(cfg["run"]["net_codec"].state_dict(), os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "model_codec.ckpt")) 
             if cfg["general"]["save_net_enhance"] and cfg["run"]["net_enhance"] != None and cfg["run"]["net_enhance"] != enhance_Identity:
-                if len(logs_plot["loss_test"]) < 2 and logs_plot_min > logs_plot["loss_test"][-1]:
-                    logs_plot_min = logs_plot["loss_test"][-1]
-                    torch.save(cfg["run"]["net_enhance"].state_dict(), os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "model_net.ckpt")) 
+                cfg["run"]["SaveBestHandler"](cfg["run"]["net_enhance"], epoch, logs_plot["loss_test"][-1], optimizer = cfg["run"]["optimizer"], scheduler = cfg["run"]["scheduler"])
+                #if len(logs_plot["loss_test"]) < 2 or logs_plot_min > logs_plot["loss_test"][-1]:
+                    #logs_plot_min = logs_plot["loss_test"][-1]
+                    #torch.save(cfg["run"]["net_enhance"].state_dict(), os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "model_net.ckpt")) 
             import pickle
             with open(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "plots.pkl"), 'wb') as f:
                 pickle.dump(logs_plot, f)
@@ -216,3 +237,6 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
         if cfg["general"]["use_wandb"]:
             wandb.log({"Enhanced": wandb.Image(X_enhance), "Enhanced + Compressed": wandb.Image(X_out['x_hat']),  "GT": wandb.Image(Y)})
         plt.pause(0.005)
+        
+    if cfg["run"]["EarlyStopping"](logs_plot["loss_test"][-1]):
+        break

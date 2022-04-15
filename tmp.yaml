@@ -14,6 +14,7 @@ general :
   enhance : true
   enhance_net: "Resnet18Unet"
   quality : 3
+  patience: 3
   cfg_dir : "cfg.yaml"
   logs_dir :  "logs/"
   dataset_type : "img"

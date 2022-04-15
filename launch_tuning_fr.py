@@ -131,13 +131,10 @@ if args_p.epochs != None:
     cfg["general"]["max_epoch"] = args_p.epochs
 if args_p.name != None:
     cfg["general"]["name"] = args_p.name
-if args_p.codec == "cheng2020_attn_quality2":
-    cfg["general"]['codec'] = None #codec_Identity
-elif args_p.codec == "No":
-    cfg["general"]['codec'] = codec_Identity
-else:
-    cfg["general"]['codec'] = None
-
+if args_p.codec != None:
+    cfg["general"]['codec'] = args_p.codec #codec_Identity
+    
+    
 if args_p.batchsz_train != None:
     cfg["general"]['batch_size_train']= args_p.batchsz_train
 if args_p.batchsz_test != None:
@@ -159,3 +156,4 @@ if  args_p.optimizeimg != None:
 if args_p.patchsz != None:
     cfg["general"]['patch_sz'] = args_p.patchsz
 exec(open('Train_current_model.py').read())
+#%run Train_current_model.py

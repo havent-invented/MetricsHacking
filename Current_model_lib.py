@@ -14,6 +14,8 @@ sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
 exec(open('main.py').read())#MAIN
 import compressai
 import math
+from tools.early_stopping import EarlyStopping
+from tools.save_model import SaveBestHandler
 from compressai.zoo import bmshj2018_factorized, cheng2020_attn, mbt2018#,ssf2020
 import torch
 from PIL import Image
@@ -44,8 +46,9 @@ try:
     home_dir
 except Exception:
     home_dir = "R:/home_dir/"
-class enhance_Identity():
+class enhance_Identity(nn.Module):
     def __init__(self):
+        super().__init__()
         pass
     def named_parameters(self):
         return {("3.quantiles",torch.nn.Parameter(torch.tensor([[0.]]))) : torch.nn.Parameter(torch.tensor([[0.]]))} 
@@ -71,7 +74,7 @@ def calculate_met(loss_calc, times = 1):
             X_enhance.data.clamp_(min=0,max=1)
             X_out = net_codec.forward(X_enhance)
             X_out['x_hat'].data.clamp_(min=0,max=1)
-            loss = loss_calc(X_out, Y)
+            loss = cfg["run"]["loss_calc"](X_out, Y)
             for j in list(loss.keys()):
                 j_converted = j + ("_test" if not to_train else "")
                 if not j_converted in logs_plot_cur1:
@@ -91,8 +94,10 @@ def calculate_met(loss_calc, times = 1):
 enhance_Identity = enhance_Identity()
 class codec_Identity(nn.Module):
     def __init__(self):
+        super().__init__()
         import pickle
         self.X_hat = None
+        #self.tmp = nn.Sequential(nn.ReLU(inplace=True),)
         with open('./sample_data/likelihoods.pkl', 'rb') as f:
             self.X_hat = pickle.load(f)
         self.X_out = {"likelihoods": self.X_hat}
@@ -354,26 +359,25 @@ class smallnet(nn.Module):
                 nn.ReLU(inplace=True),)
         self.seq2 = nn.Sequential(
             nn.Conv2d(16, 16, (3,3), padding="same"),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(),
             nn.Conv2d(16, 32, (3,3), padding="same"),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(),
             nn.Conv2d(32, 16, (3,3), padding="same"),
-                nn.ReLU(inplace=True),)
+                nn.LeakyReLU(),)
         self.seq3 = nn.Sequential(
             nn.Conv2d(16, 16, (3,3), padding="same"),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(),
             nn.Conv2d(16, 16, (3,3), padding="same"),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(),
             )
         self.seq4 = nn.Sequential(
             nn.Conv2d(16, 16, (3,3), padding="same"),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(),
             nn.Conv2d(16, 16, (3,3), padding="same"),
-                nn.ReLU(inplace=True),
+                nn.LeakyReLU(inplace=True),
             nn.Conv2d(16, 16, (3,3), padding="same"),
-                nn.ReLU(inplace=True),)
-        self.seq5 = nn.Sequential(nn.Conv2d(16, 3, (3,3), padding="same"),
-                nn.ReLU(inplace=True))
+                nn.LeakyReLU(),)
+        self.seq5 = nn.Sequential(nn.Conv2d(16, 3, (3,3), padding="same"),)
         
     def forward(self, inputX):    
         x = self.seq1(inputX)
@@ -382,6 +386,43 @@ class smallnet(nn.Module):
         x = self.seq3(x) + x
         x = self.seq4(x) + x
         x = x1 + x
+        x = self.seq5(x)
+        return x
+
+class smallnet_skips(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding="same"),
+                nn.ReLU(inplace=True),)
+        self.seq2 = nn.Sequential(
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.LeakyReLU(),
+            nn.Conv2d(16, 32, (3,3), padding="same"),
+                nn.LeakyReLU(),
+            nn.Conv2d(32, 16, (3,3), padding="same"),
+                nn.LeakyReLU(),)
+        self.seq3 = nn.Sequential(
+            nn.Conv2d(32, 16, (3,3), padding="same"),
+                nn.LeakyReLU(),
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.LeakyReLU(),
+            )
+        self.seq4 = nn.Sequential(
+            nn.Conv2d(48, 16, (3,3), padding="same"),
+                nn.LeakyReLU(),
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.LeakyReLU(),
+            nn.Conv2d(16, 16, (3,3), padding="same"),
+                nn.LeakyReLU(),)
+        self.seq5 = nn.Sequential(nn.Conv2d(80, 3, (3,3), padding="same"),)
+        
+    def forward(self, inputX):    
+        x = self.seq1(inputX)
+        x1 = x
+        x = torch.cat([x, self.seq2(x)], 1)
+        x = torch.cat([x, self.seq3(x)], 1)
+        x = torch.cat([x, self.seq4(x)], 1)
+        x = torch.cat([x, x1], 1)
         x = self.seq5(x)
         return x
 class ResNetUNet(nn.Module):
@@ -467,7 +508,30 @@ class ResNetUNet(nn.Module):
             out = out[..., :input_shape[-2], :input_shape[-1]]
         #out = torchvision.transforms.Lambda(cut_pad)(out)
         return out
-
+class Logger():
+    def __init__(self, cfg):
+        self.cfg = cfg
+        try:
+            os.mkdir(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"]))
+        except Exception:
+            pass
+    def write_cfg(self, ):
+        with open(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "cfg.yaml"), "w") as fh:  
+            yaml.dump({"general":cfg["general"]}, fh)
+    def write_logs(self, ):
+        try:
+            with open(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "logs.yaml"), "w") as fh:  
+                yaml.dump({"logs" : cfg["logs"]}, fh)
+        except Exception:
+            print("exception while logging yaml")
+        try:
+            np.save(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "logs.npy"), Log_1)
+        except Exception:
+            print("exception while logging npy")
+    def save_img(self, args):
+        pltimshow_batch(args, filename = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "vis.png"))
+       
+        
 from piq import LPIPS as piq_LPIPS#PieAPP VSI, FSIM, NLPD, deepIQA
 from piq import DISTS as piq_DISTS
 import IQA_pytorch as iqa#SSIM, GMSD, LPIPSvgg, DISTS
@@ -779,6 +843,6 @@ class CustomImageDataset(Dataset):
 
 def get_met(X):
     if met_name == "VSFA":
-        return -loss_calc({"x_hat": torch.cat([X,X])}, torch.cat([X,X]))["loss"]
+        return -cfg["run"]["loss_calc"]({"x_hat": torch.cat([X,X])}, torch.cat([X,X]))["loss"]
     else:
-        return -loss_calc({"x_hat": X}, X)["loss"]
+        return -cfg["run"]["loss_calc"]({"x_hat": X}, X)["loss"]

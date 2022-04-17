@@ -53,8 +53,9 @@ def load_models(paths):
     for path in paths:
         if os.path.getsize(path) // 10**6 == 73:
             model_list.append(ResNetUNet(3))
-        if os.path.getsize(path) // 10**6 == 10:
-            model_list.append(get_simple_cnn())
+        #if os.path.getsize(path) // 10**6 == 10:
+        else:
+            model_list.append(smallnet_skips())
         model_list[-1].load_state_dict(torch.load(path)) 
     return model_list
 

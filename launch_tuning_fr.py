@@ -23,6 +23,7 @@ parser.add_argument(
 parser.add_argument(
     '-met',
     type=str,
+    default = None,
     help='provide metrics name'
 )
 
@@ -42,7 +43,7 @@ parser.add_argument(
     '-k',
     type=int,
     default = None,
-    help='k for mse'
+    help='k for proxy'
 )
 parser.add_argument(
     '-codec',
@@ -139,7 +140,7 @@ if args_p.batchsz_train != None:
     cfg["general"]['batch_size_train']= args_p.batchsz_train
 if args_p.batchsz_test != None:
     cfg["general"]['batch_size_test'] = args_p.batchsz_test
-
+    
 if args_p.enhance != None:
     cfg["general"]['enhance_net'] = args_p.enhance
     if args_p.enhance == "Identity":

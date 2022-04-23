@@ -26,7 +26,10 @@ elif cfg["general"]["enhance_net"] == "smallnet_skips":
         cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"]).requires_grad_(True)
         for i in cfg["run"]["net_enhance"].parameters():
             i.retain_grad()
-            
+#TODO:delete this
+if "pretrained_model_path" in cfg["general"]:
+    ckpt = torch.load(cfg["general"]['pretrained_model_path'])['model']
+    cfg["run"]["net_enhance"].load_state_dict(ckpt)
             
 if cfg["general"]["codec"] == "No":
     cfg["run"]["net_codec"] = codec_Identity
@@ -129,65 +132,68 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
     gradnorm_max = 0
     for to_train in [True, False]:
         tqdm_dataset = tqdm(dataset_train if to_train else dataset_test)
-        for frame in tqdm_dataset:
-            idx_video += 1
-            if not cfg["general"]["optimize_image"]:
-                X = frame.to(cfg["run"]["device"]).requires_grad_()
-                X.retain_grad()
-                #X = torchvision.transforms.RandomResizedCrop((patch_sz,patch_sz))(X)
-                Y = X.clone().detach().to(cfg["run"]["device"]).requires_grad_()
-                Y.retain_grad()
-            #X.data.clamp_(min=0,max=1)
-            cfg["run"]["optimizer"].zero_grad()
-            #aux_optimizer.zero_grad()
-            X_enhance = cfg["run"]["net_enhance"](X)
-            #X_enhance = torch.sigmoid(X_enhance)
-            X_enhance.data.clamp_(min=0,max=1)
-            X_out = cfg["run"]["net_codec"].forward(X_enhance)
-            X_out['x_hat'].data.clamp_(min=0,max=1)
-            X_out["x_hat"] = X_out["x_hat"][..., :X_enhance.shape[-2], :X_enhance.shape[-1]]
-            #X_out['x_hat'] = torch.nan_to_num(X_out['x_hat'])
-            #Y = torch.nan_to_num(Y)
-            
-            
-            loss = cfg["run"]["loss_calc"](X_out, Y)
-            if str(loss[list(loss.keys())[4]].item()) == 'nan':
-                print("Exception: NAN in loss")
-            lmbda = 1e-2
-
-            if epoch != 0 and to_train:
-                loss["loss"].backward()
-                for p in list(filter(lambda p: p.grad is not None, parameters)):
-                    #gradnorm_cur = abs(p.grad.data.norm(2).item())
-                    gradnorm_cur = abs(p.grad.data.norm(float('inf')).item())
-                    if gradnorm_max <= gradnorm_cur:
-                        print(gradnorm_max)
-                        gradnorm_max = gradnorm_cur
-                #if gradnorm_cur > 1.:
-                #    continue
-                torch.nn.utils.clip_grad_norm_(parameters, 1.)
-                torch.nn.utils.clip_grad_value_(parameters, 1.)
-                for par in parameters:
-                    if par.grad != None:
-                        par.grad = torch.nan_to_num(par.grad)
-                #list(parameters)[0] = torch.nan_to_num(list(parameters)[0])
-                if gradnorm_cur < 0.025:
-                    cfg["run"]["optimizer"].step()
-                if epoch > cfg["general"]["lr_linear_stage"]:
-                    cfg["run"]["scheduler"].step()
-            #loss["aux_loss"] = net_codec.aux_loss()
-            #if epoch != 0 and to_train:
-                #loss["aux_loss"].backward()
-                #aux_optimizer.step()
+        cfg["run"]["net_enhance"].train(to_train)
+        with (torch.enable_grad() if to_train else torch.no_grad()):
+            for frame in tqdm_dataset:
+                idx_video += 1
+                if not cfg["general"]["optimize_image"]:
+                    X = frame.to(cfg["run"]["device"]).requires_grad_()
+                    X.retain_grad()
+                    #X = torchvision.transforms.RandomResizedCrop((patch_sz,patch_sz))(X)
+                    Y = X.clone().detach().to(cfg["run"]["device"]).requires_grad_()
+                    Y.retain_grad()
+                #X.data.clamp_(min=0,max=1)
+                cfg["run"]["optimizer"].zero_grad()
+                #aux_optimizer.zero_grad()
+                X_enhance = cfg["run"]["net_enhance"](X)
+                #X_enhance = torch.sigmoid(X_enhance)
+                X_enhance.data.clamp_(min=0,max=1)
+                X_out = cfg["run"]["net_codec"].forward(X_enhance)
+                X_out['x_hat'].data.clamp_(min=0,max=1)
+                X_out["x_hat"] = X_out["x_hat"][..., :X_enhance.shape[-2], :X_enhance.shape[-1]]
+                #X_out['x_hat'] = torch.nan_to_num(X_out['x_hat'])
+                #Y = torch.nan_to_num(Y)
                 
-            for j in list(loss.keys()):
-                j_converted = j + ("_test" if not to_train else "")
-                if not j_converted in logs_plot_cur:
-                    logs_plot_cur[j_converted] = []
-                logs_plot_cur[j_converted].append(loss[j].data.to("cpu").numpy())
-            #X_enhance.data.clamp_(min=0,max=1)
-            #X.data.clamp_(min=0,max=1)
-            #X_out['x_hat'].data.clamp_(min=0,max=1)
+                
+                loss = cfg["run"]["loss_calc"](X_out, Y)
+                if str(loss[list(loss.keys())[4]].item()) == 'nan':
+                    print("Exception: NAN in loss")
+                lmbda = 1e-2
+    
+                if epoch != 0 and to_train:
+                    loss["loss"].backward()
+                    for p in list(filter(lambda p: p.grad is not None, parameters)):
+                        #gradnorm_cur = abs(p.grad.data.norm(2).item())
+                        gradnorm_cur = abs(p.grad.data.norm(float('inf')).item())
+                        if gradnorm_max <= gradnorm_cur:
+                            print(gradnorm_max)
+                            gradnorm_max = gradnorm_cur
+                    #if gradnorm_cur > 1.:
+                    #    continue
+                    torch.nn.utils.clip_grad_norm_(parameters, 1.)
+                    #torch.nn.utils.clip_grad_norm_(parameters, 10.)#0.05#0.1
+                    torch.nn.utils.clip_grad_value_(parameters, 1.)
+                    for par in parameters:
+                        if par.grad != None:
+                            par.grad = torch.nan_to_num(par.grad)
+                    #list(parameters)[0] = torch.nan_to_num(list(parameters)[0])
+                    if gradnorm_cur < 0.025:
+                        cfg["run"]["optimizer"].step()
+                    if epoch > cfg["general"]["lr_linear_stage"]:
+                        cfg["run"]["scheduler"].step()
+                #loss["aux_loss"] = net_codec.aux_loss()
+                #if epoch != 0 and to_train:
+                    #loss["aux_loss"].backward()
+                    #aux_optimizer.step()
+                    
+                for j in list(loss.keys()):
+                    j_converted = j + ("_test" if not to_train else "")
+                    if not j_converted in logs_plot_cur:
+                        logs_plot_cur[j_converted] = []
+                    logs_plot_cur[j_converted].append(loss[j].data.to("cpu").numpy())
+                #X_enhance.data.clamp_(min=0,max=1)
+                #X.data.clamp_(min=0,max=1)
+                #X_out['x_hat'].data.clamp_(min=0,max=1)
             
     print("gradient norm: {}".format(gradnorm_max))
     if cfg["general"]["use_wandb"]:

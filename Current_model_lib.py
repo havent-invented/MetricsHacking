@@ -53,7 +53,7 @@ class enhance_Identity(nn.Module):
     def named_parameters(self):
         return {("3.quantiles",torch.nn.Parameter(torch.tensor([[0.]]))) : torch.nn.Parameter(torch.tensor([[0.]]))} 
     def parameters(self):
-        return self.named_parameters() 
+        return [torch.nn.Parameter(torch.tensor([[0.]]))]
     def forward(self, X):
         return X
     def __call__(self, X):
@@ -85,13 +85,47 @@ def calculate_met(loss_calc, times = 1):
                 if not j in logs_plot1:
                     logs_plot1[j] = []
                 logs_plot1[j].append(np.mean(logs_plot_cur1[j]))
-                if use_wandb:
+                if cfg["general"]["use_wandb"]:
                     wandb.log({j: np.mean(logs_plot_cur1[j])})
-    if use_wandb:
+    if cfg["general"]["use_wandb"]:
         wandb.log({"Compressed": wandb.Image(X_out['x_hat']),  "GT": wandb.Image(Y)}) 
     return logs_plot1
 
 enhance_Identity = enhance_Identity()
+
+class codec_Blur(nn.Module):
+    def __init__(self, kernel_sizes = (3, 5) , sigma = (0.1, 2.0)):
+        import torchvision
+        super().__init__()
+        import pickle
+        self.kernel_sizes = kernel_sizes
+        self.sigma = sigma 
+        if self.kernel_sizes[0] == self.kernel_sizes[1]:
+            self.convert_f = torchvision.transforms.GaussianBlur(kernel_size = self.kernel_sizes[0], sigma = self.sigma)
+        self.X_hat = None
+        #self.tmp = nn.Sequential(nn.ReLU(inplace=True),)
+        with open('./sample_data/likelihoods.pkl', 'rb') as f:
+            self.X_hat = pickle.load(f)
+        self.X_out = {"likelihoods": self.X_hat}
+        class entropy_bottleneck:
+            def __init__(self):
+                self.loss = lambda : 0
+        self.entropy_bottleneck = entropy_bottleneck()
+        self.entropy_bottleneck.loss = lambda : 0
+    def named_parameters(self):
+        return {("3.quantiles",torch.nn.Parameter(torch.tensor([[0.]]))) : torch.nn.Parameter(torch.tensor([[0.]]))} 
+    
+    def forward(self, X):
+        if self.kernel_sizes[0] != self.kernel_sizes[1]:
+            self.convert_f = torchvision.transforms.GaussianBlur(kernel_size = np.random.randint(self.kernel_sizes[0], self.kernel_sizes[1]) // 2 * 2 + 1, sigma = self.sigma)
+        self.X_out['x_hat'] = self.convert_f(X)
+        return self.X_out
+    def __call__(self, X):
+        return self.forward(X)
+    def to(self, device):
+        return self
+
+
 class codec_Identity(nn.Module):
     def __init__(self):
         super().__init__()
@@ -840,6 +874,9 @@ class CustomImageDataset(Dataset):
         else:
             self.image = torchvision.transforms.RandomResizedCrop((cfg['general']['patch_sz'],cfg['general']['patch_sz']))(self.image)
         return self.image / 255.
+    def close(self):
+        del self.image
+        
 
 def get_met(X):
     if met_name == "VSFA":

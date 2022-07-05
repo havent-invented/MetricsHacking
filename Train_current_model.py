@@ -26,15 +26,19 @@ elif cfg["general"]["enhance_net"] == "smallnet_skips":
         cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"]).requires_grad_(True)
         for i in cfg["run"]["net_enhance"].parameters():
             i.retain_grad()
-#TODO:delete this
+elif cfg["general"]["enhance_net"] == "No" or cfg["general"]["enhance_net"] == "Identity": 
+    cfg["run"]["net_enhance"] = enhance_Identity
+    
 if "pretrained_model_path" in cfg["general"]:
     ckpt = torch.load(cfg["general"]['pretrained_model_path'])['model']
     cfg["run"]["net_enhance"].load_state_dict(ckpt)
             
 if cfg["general"]["codec"] == "No":
     cfg["run"]["net_codec"] = codec_Identity
+elif cfg["general"]["codec"] == "Blur":
+    cfg["run"]["net_codec"] = codec_Blur(sigma = (cfg["general"]["blur_cfg"]["blur_sigma_min"], cfg["general"]["blur_cfg"]["blur_sigma_max"]), kernel_sizes = (cfg["general"]["blur_cfg"]["blur_sz_min"], cfg["general"]["blur_cfg"]["blur_sz_max"])).to(cfg["run"]["device"])
 else:
-    cfg["run"]["net_codec"] = cheng2020_attn(quality=cfg["general"]["quality"], pretrained=True).to(cfg["run"]["device"]).requires_grad_(True)# ssf2020 -- video
+    cfg["run"]["net_codec"] = cheng2020_attn(quality=cfg["general"]["quality"], pretrained = True, metric = cfg["general"]["codec_metric"]).to(cfg["run"]["device"]).requires_grad_(True)# ssf2020 -- video
 
 #env = calc_met( model = "MDTVSFA", home_dir1=home_dir,dataset_dir=dst_dir)
 #self = env
@@ -69,7 +73,7 @@ parameters = set(p for p in cfg["run"]["net_enhance"].parameters()) if not cfg["
 #aux_loss = net_codec.entropy_bottleneck.loss()
 if cfg["general"]["optimizer"] == "AdamW":
     cfg["run"]["optimizer"] = optim.AdamW(parameters, **cfg["general"]["optimizer_opt"])
-if cfg["general"]["optimizer"] == "Adam":
+elif cfg["general"]["optimizer"] == "Adam":
     cfg["run"]["optimizer"] = optim.Adam(parameters, **cfg["general"]["optimizer_opt"])
 elif cfg["general"]["optimizer"] == "SGD":
     cfg["run"]["optimizer"] = optim.SGD(parameters, **cfg["general"]["optimizer_opt"])
@@ -145,12 +149,23 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
                 #X.data.clamp_(min=0,max=1)
                 cfg["run"]["optimizer"].zero_grad()
                 #aux_optimizer.zero_grad()
-                X_enhance = cfg["run"]["net_enhance"](X)
-                #X_enhance = torch.sigmoid(X_enhance)
-                X_enhance.data.clamp_(min=0,max=1)
-                X_out = cfg["run"]["net_codec"].forward(X_enhance)
-                X_out['x_hat'].data.clamp_(min=0,max=1)
-                X_out["x_hat"] = X_out["x_hat"][..., :X_enhance.shape[-2], :X_enhance.shape[-1]]
+                if not "order_pre_post" in cfg['general'] or cfg['general']['order_pre_post'] == 0:
+                    X_enhance = cfg["run"]["net_enhance"](X)
+                    #X_enhance = torch.sigmoid(X_enhance)
+                    X_enhance.data.clamp_(min=0,max=1)
+                    X_out = cfg["run"]["net_codec"].forward(X_enhance)
+                    X_out['x_hat'].data.clamp_(min=0,max=1)
+                    X_out["x_hat"] = X_out["x_hat"][..., :X_enhance.shape[-2], :X_enhance.shape[-1]]
+                else:
+                    X_codec = cfg["run"]["net_codec"].forward(X)
+                    X_codec['x_hat'].data.clamp_(min=0,max=1)
+                    X_codec["x_hat"] = X_codec["x_hat"][..., :X_codec['x_hat'].shape[-2], :X_codec['x_hat'].shape[-1]]
+                    X_out = {"likelihoods" : X_codec["likelihoods"]}
+                    X_codec['x_hat'].data.clamp_(min=0,max=1)
+                    X_out["x_hat"] = cfg["run"]["net_enhance"](X_codec["x_hat"])
+                    #X_enhance = torch.sigmoid(X_enhance)
+                    
+                    
                 #X_out['x_hat'] = torch.nan_to_num(X_out['x_hat'])
                 #Y = torch.nan_to_num(Y)
                 
@@ -172,12 +187,12 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
                     #    continue
                     torch.nn.utils.clip_grad_norm_(parameters, 1.)
                     #torch.nn.utils.clip_grad_norm_(parameters, 10.)#0.05#0.1
-                    torch.nn.utils.clip_grad_value_(parameters, 1.)
+                    #torch.nn.utils.clip_grad_value_(parameters, 1.)
                     for par in parameters:
                         if par.grad != None:
                             par.grad = torch.nan_to_num(par.grad)
                     #list(parameters)[0] = torch.nan_to_num(list(parameters)[0])
-                    if gradnorm_cur < 0.025:
+                    if 1 or gradnorm_cur < 0.025:
                         cfg["run"]["optimizer"].step()
                     if epoch > cfg["general"]["lr_linear_stage"]:
                         cfg["run"]["scheduler"].step()
@@ -197,14 +212,14 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
             
     print("gradient norm: {}".format(gradnorm_max))
     if cfg["general"]["use_wandb"]:
-        wandb.log({"gradient norm max": gradnorm_max})
+        wandb.log({"gradient norm max": gradnorm_max}, step = epoch)
     if not to_train:
         for j in list(logs_plot_cur.keys()):
             if not j in logs_plot:
                 logs_plot[j] = []
             logs_plot[j].append(np.mean(logs_plot_cur[j]))
             if cfg["general"]["use_wandb"]:
-                wandb.log({j: np.mean(logs_plot_cur[j])})
+                wandb.log({j: np.mean(logs_plot_cur[j])}, step = epoch)
     if 1:
         clear_output()
         fig = plt.figure(figsize=(20,8))
@@ -239,9 +254,9 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
         plt.figure(25)
         #X.data = X_sample.data
         #X_out = net_codec.forward(X)
-        pltimshow_batch([Y, X_enhance, X_out['x_hat']], filename = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "vis.png"))
+        pltimshow_batch([Y, (X_enhance if (not "order_pre_post" in cfg['general'] or cfg['general']['order_pre_post'] == 0) else X_codec['x_hat']) , X_out['x_hat']], filename = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "vis.png"))
         if cfg["general"]["use_wandb"]:
-            wandb.log({"Enhanced": wandb.Image(X_enhance), "Enhanced + Compressed": wandb.Image(X_out['x_hat']),  "GT": wandb.Image(Y)})
+            wandb.log({"Enhanced": wandb.Image((X_enhance if (not "order_pre_post" in cfg['general'] or cfg['general']['order_pre_post'] == 0) else X_codec['x_hat'])), "Enhanced + Compressed": wandb.Image(X_out['x_hat']),  "GT": wandb.Image(Y)}, step = epoch)
         plt.pause(0.005)
         
     if cfg["run"]["EarlyStopping"](logs_plot["loss_test"][-1]):

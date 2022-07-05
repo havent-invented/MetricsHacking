@@ -41,7 +41,7 @@ parser.add_argument(
 )
 parser.add_argument(
     '-k',
-    type=int,
+    type=float,
     default = None,
     help='k for proxy'
 )
@@ -93,11 +93,63 @@ parser.add_argument(
     default = None,
     help='Test batch size'
 )
+
+parser.add_argument(
+    '-blur_sigma_min',
+    type=float,
+    default = None,
+    help='Blur sigma min'
+)
+parser.add_argument(
+    '-blur_sigma_max',
+    type=float,
+    default = None,
+    help='Blur sigma max'
+)
+parser.add_argument(
+    '-blur_sz_min',
+    type=int,
+    default = None,
+    help='Blur kernel size min'
+)
+parser.add_argument(
+    '-blur_sz_max',
+    type=int,
+    default = None,
+    help='Blur kernel size max'
+)
+
 parser.add_argument(
     '-cfg_dir',
     type=str,
     default = "",
     help='Config file'
+)
+parser.add_argument(
+    '-comment',
+    type=str,
+    default = "",
+    help='comment'
+)
+parser.add_argument(
+    '-codec_metric',
+    type=str,
+    default = None,
+    help='codec_metric'
+)
+
+parser.add_argument(
+    '-order_pre_post',
+    type = int,
+    default = None,
+    help = 'order_pre_post'
+)
+
+parser.add_argument(
+    '-codec_pretrained',
+    type = int,
+    default = None,
+    help = 'codec_pretrained'
 )
 
 args_p = parser.parse_args()
@@ -109,6 +161,8 @@ if 1 or args_p.cfg_dir != "cfg.yaml":
         cfg = yaml.load(fh, Loader=yaml.FullLoader)
         cfg["general"]["cfg_dir"] = args_p.cfg_dir
         #cfg = SimpleNamespace(**cfg)
+
+
 if args_p.met != None:
     cfg["general"]["met_names"] =[args_p.met,]
 
@@ -117,6 +171,17 @@ if args_p.k != None:
     cfg["general"]["met_names"] = [args_p.met, args_p.proxy]
     cfg["general"]["k_lst"] = [1, args_p.k]
 
+if args_p.blur_sigma_max != None:   
+    cfg["general"]["blur_cfg"]["blur_sigma_max"] = args_p.blur_sigma_max
+if args_p.blur_sigma_min != None:     
+    cfg["general"]["blur_cfg"]["blur_sigma_min"] = args_p.blur_sigma_min
+if args_p.blur_sz_min != None:     
+    cfg["general"]["blur_cfg"]["blur_sz_min"] = args_p.blur_sz_min
+if args_p.blur_sz_max != None:     
+    cfg["general"]["blur_cfg"]["blur_sz_max"] = args_p.blur_sz_max
+
+if args_p.codec_pretrained != None:     
+    cfg["general"]["codec_pretrained"] = args_p.codec_pretrained
 """
 if args_p.patchsz != 256:
     patch_sz = args_p.patchsz
@@ -134,13 +199,19 @@ if args_p.name != None:
     cfg["general"]["name"] = args_p.name
 if args_p.codec != None:
     cfg["general"]['codec'] = args_p.codec #codec_Identity
+if args_p.codec_metric != None:
+    cfg["general"]['codec_metric'] = args_p.codec_metric
+
     
-    
+cfg["general"]["comment"] = args_p.comment   
 if args_p.batchsz_train != None:
     cfg["general"]['batch_size_train']= args_p.batchsz_train
 if args_p.batchsz_test != None:
     cfg["general"]['batch_size_test'] = args_p.batchsz_test
-    
+
+if args_p.order_pre_post != None:
+    cfg["general"]['order_pre_post'] = args_p.order_pre_post
+
 if args_p.enhance != None:
     cfg["general"]['enhance_net'] = args_p.enhance
     if args_p.enhance == "Identity":

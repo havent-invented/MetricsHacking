@@ -1,43 +1,37 @@
 import sys
 if not "device" in cfg["run"]:
     device = "cuda:0"
-if 0:
-    import torchvision
-    import torch
-    optimize_image = False
-    net_enhance = enhance_Identity if optimize_image else None
-    net_codec = codec_Identity #if optimize_image else None
-    save_netcodec = False
-    save_net_enhance = True
+import os
 import sys
-sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
-exec(open('main.py').read())#MAIN
+#sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
+#exec(open('main.py').read())#MAIN
+sys.path.append(os.path.join(cfg['general']['project_dir'], "OMGD"))
+
 import compressai
 import math
 from tools.early_stopping import EarlyStopping
 from tools.save_model import SaveBestHandler
 from compressai.zoo import bmshj2018_factorized, cheng2020_attn, mbt2018#,ssf2020
 import torch
-from PIL import Image
 import torchvision.transforms
 import skvideo.io
 from PIL import Image
 import numpy as np
 from IPython.display import clear_output
-from CNNfeatures import get_features
-from VQAmodel import VQAModel
+from tqdm.notebook import tqdm
+#from CNNfeatures import get_features
+#from VQAmodel import VQAModel
 from argparse import ArgumentParser
 import time
-from PIL import Image
-import torch
-import numpy as np
 from torch import nn
 import torch.optim as optim
+import matplotlib.pyplot as plt
+
 try:
     cfg['general']['patch_sz']
 except Exception:
     cfg['general']['patch_sz'] = 256
-dst_dir_vimeo = 'P:/vimeo_triplet/sequences/'
+dst_dir_vimeo = cfg['general']['dataset_dir'] 
 try:
     dst_dir
 except Exception:
@@ -45,7 +39,7 @@ except Exception:
 try:
     home_dir
 except Exception:
-    home_dir = "R:/home_dir/"
+    home_dir = cfg['general']['home_dir']
 class enhance_Identity(nn.Module):
     def __init__(self):
         super().__init__()
@@ -104,7 +98,7 @@ class codec_Blur(nn.Module):
             self.convert_f = torchvision.transforms.GaussianBlur(kernel_size = self.kernel_sizes[0], sigma = self.sigma)
         self.X_hat = None
         #self.tmp = nn.Sequential(nn.ReLU(inplace=True),)
-        with open('./sample_data/likelihoods.pkl', 'rb') as f:
+        with open(os.path.join(cfg["general"]["project_dir"], 'sample_data/likelihoods.pkl'), 'rb') as f:
             self.X_hat = pickle.load(f)
         self.X_out = {"likelihoods": self.X_hat}
         class entropy_bottleneck:
@@ -165,11 +159,10 @@ from argparse import ArgumentParser
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms.functional import resize, to_tensor, normalize
 from PIL import Image
-import h5py
-
+#import h5py 
 
 class koniq(nn.Module):# TODO: FIX  inference
-    def __init__(self, model_dir ="E:/VMAF_METRIX/NeuralNetworkCompression/koniq/", device = cfg["run"]["device"], to_train = True, to_crop = False):
+    def __init__(self, model_dir ="./koniq/", device = cfg["run"]["device"], to_train = True, to_crop = False):
         super().__init__()
         import sys
         sys.path.insert(1, model_dir)
@@ -224,7 +217,7 @@ class koniq(nn.Module):# TODO: FIX  inference
 import torch.nn as nn
 from torchvision.transforms.functional import resize, to_tensor, normalize
 class Linearity(nn.Module):
-    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/LinearityIQA/LinearityIQA/", device = cfg["run"]["device"], to_train = True):
+    def __init__(self, model_dir = "./LinearityIQA/LinearityIQA/", device = cfg["run"]["device"], to_train = True):
         super().__init__()
         if to_train:
             self.train_eval_mode = torch.enable_grad
@@ -251,12 +244,12 @@ class Linearity(nn.Module):
         return val / 100.
     
     
-def Linearity_met(im, device = cfg["run"]["device"],  model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/LinearityIQA/LinearityIQA/", to_train = True):
+def Linearity_met(im, device = cfg["run"]["device"],  model_dir = "./LinearityIQA/LinearityIQA/", to_train = True):
     sys.path.insert(1, model_dir)
     from IQAmodel import IQAModel
     model = IQAModel().to(device) 
     im = normalize(im, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]) 
-    checkpoint = torch.load("E:/VMAF_METRIX/NeuralNetworkCompression/LinearityIQA/LinearityIQA/../p1q2.pth")
+    checkpoint = torch.load("./LinearityIQA/LinearityIQA/../p1q2.pth")
     model.load_state_dict(checkpoint['model'])
     y = model(im)
     #y = model(im.unsqueeze(0))
@@ -265,7 +258,7 @@ def Linearity_met(im, device = cfg["run"]["device"],  model_dir = "E:/VMAF_METRI
     return -(y[-1] * k[-1] + b[-1]).mean() / 100.
 
 class NIMA(nn.Module):
-    def __init__(self, model_dir ="E:/VMAF_METRIX/NeuralNetworkCompression/Neural-IMage-Assessment/", device = cfg["run"]["device"], crop = False, to_train = True):
+    def __init__(self, model_dir ="./Neural-IMage-Assessment/", device = cfg["run"]["device"], crop = False, to_train = True):
         super().__init__()
         if to_train:
             self.train_eval_mode = torch.enable_grad
@@ -306,7 +299,7 @@ class NIMA(nn.Module):
     
 
 class VSFA_loss(nn.Module):#TODO: check [0][0]
-    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/VSFA/VSFA/", device = cfg["run"]["device"], to_train = True):
+    def __init__(self, model_dir = "./VSFA/VSFA/", device = cfg["run"]["device"], to_train = True):
         super().__init__()
         import sys
         sys.path.insert(1, model_dir)
@@ -346,7 +339,7 @@ class BRISQ(nn.Module):
         return val
 
 class SPAQ(nn.Module):#OK
-    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/SPAQ", device = cfg["run"]["device"], to_train = True):
+    def __init__(self, model_dir = "./SPAQ", device = cfg["run"]["device"], to_train = True):
         super().__init__()
         if to_train:
             self.train_eval_mode = torch.enable_grad
@@ -354,7 +347,7 @@ class SPAQ(nn.Module):#OK
             self.train_eval_mode = torch.no_grad
         sys.path.insert(1, model_dir)
         from BL_demo import Demo#Changed map_location
-        self.dm = Demo("", checkpoint_dir='E:/VMAF_METRIX/NeuralNetworkCompression/SPAQ/weights/BL_release.pt', device = device )
+        self.dm = Demo("", checkpoint_dir='./SPAQ/weights/BL_release.pt', device = device )
         self.dm.model = self.dm.model.to(device)
     def forward(self, im, device = cfg["run"]["device"]):
         with self.train_eval_mode():
@@ -362,7 +355,7 @@ class SPAQ(nn.Module):#OK
         return score_1 / 100.
 
 class paq2piq_model(nn.Module):#OK
-    def __init__(self, model_dir = "E:/VMAF_METRIX/NeuralNetworkCompression/paq2piq/", device = cfg["run"]["device"], blk_size = None, to_train = True):
+    def __init__(self, model_dir = "./paq2piq/", device = cfg["run"]["device"], blk_size = None, to_train = True):
         super().__init__()
         import sys
         sys.path.insert(1,model_dir)
@@ -426,29 +419,29 @@ class smallnet(nn.Module):
 class smallnet_skips(nn.Module):
     def __init__(self):
         super().__init__()
-        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding="same"),
+        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding = 1),#, padding="same"),
                 nn.ReLU(inplace=True),)
         self.seq2 = nn.Sequential(
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3),padding = 1),# padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 32, (3,3), padding="same"),
+            nn.Conv2d(16, 32, (3,3), padding = 1),# padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(32, 16, (3,3), padding="same"),
+            nn.Conv2d(32, 16, (3,3), padding = 1), #padding="same"),
                 nn.LeakyReLU(),)
         self.seq3 = nn.Sequential(
-            nn.Conv2d(32, 16, (3,3), padding="same"),
+            nn.Conv2d(32, 16, (3,3), padding = 1), #padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1),# padding="same"),
                 nn.LeakyReLU(),
             )
         self.seq4 = nn.Sequential(
-            nn.Conv2d(48, 16, (3,3), padding="same"),
+            nn.Conv2d(48, 16, (3,3), padding = 1), #padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1), #padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3),padding = 1), #padding="same"),
                 nn.LeakyReLU(),)
-        self.seq5 = nn.Sequential(nn.Conv2d(80, 3, (3,3), padding="same"),)
+        self.seq5 = nn.Sequential(nn.Conv2d(80, 3, (3,3),padding = 1)) #padding="same"),)
         
     def forward(self, inputX):    
         x = self.seq1(inputX)
@@ -457,6 +450,7 @@ class smallnet_skips(nn.Module):
         x = torch.cat([x, self.seq3(x)], 1)
         x = torch.cat([x, self.seq4(x)], 1)
         x = torch.cat([x, x1], 1)
+        #print(self.seq5)
         x = self.seq5(x)
         return x
 class ResNetUNet(nn.Module):
@@ -564,7 +558,19 @@ class Logger():
             print("exception while logging npy")
     def save_img(self, args):
         pltimshow_batch(args, filename = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "vis.png"))
+    def write_code(self, ):
+        try:
+            os.mkdir(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "code"))
+        except Exception:
+            pass
        
+        src = os.path.join(cfg["general"]["project_dir"],'Current_model_lib.py')
+        dst = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "code",'Current_model_lib.py')
+        shutil.copyfile(src, dst)
+        src = os.path.join(cfg["general"]["project_dir"],'Train_current_model.py')
+        dst = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "code",'Train_current_model.py')
+        shutil.copyfile(src, dst)
+         
         
 from piq import LPIPS as piq_LPIPS#PieAPP VSI, FSIM, NLPD, deepIQA
 from piq import DISTS as piq_DISTS
@@ -652,7 +658,7 @@ class Custom_enh_Loss(nn.Module):
         if "VSFA" in self.target_lst:
             self.vsfa_loss = VSFA_loss(to_train = to_train)
         if "PieAPP" in self.target_lst:
-            self.piapp_loss = PieAPP()
+            self.piapp_loss = PieAPP(enable_grad = to_train)
         if "PAC2PIQ" in self.target_lst:
             self.paq2piq_loss = paq2piq_model(to_train = to_train)
         if "NIMA" in self.target_lst:
@@ -664,6 +670,8 @@ class Custom_enh_Loss(nn.Module):
         from IQA_pytorch import GMSD, VIF, VIFs, MS_SSIM
         from piq import DISTS as piq_DISTS
         from piq import LPIPS as piq_LPIPS
+        import IQA_pytorch
+        import piq
         if "GMSD" in self.target_lst:
             self.GMSD_loss = GMSDLoss()
         if "GMSD1" in self.target_lst:
@@ -698,7 +706,18 @@ class Custom_enh_Loss(nn.Module):
             self.DISTS_loss_2 = piq_DISTS()
         if "LPIPS1" in self.target_lst:
             self.LPIPS_loss_2 = piq_LPIPS()
-        
+        if "FSIM" in self.target_lst:
+            self.FSIMLoss = piq.FSIMLoss()
+        if "StyleLoss" in self.target_lst:
+            self.StyleLoss = piq.StyleLoss()
+        #if "SF" in self.target_lst:
+            #self.sf = piq.sf()
+        if "NLPD" in self.target_lst:
+            self.NLPD = IQA_pytorch.NLPD()
+        if "ContentLoss" in self.target_lst:
+            self.ContentLoss = piq.ContentLoss()
+
+ 
     def forward(self, X_out, Y):
         if X_out['x_hat'].device != Y.device:
             X_out['x_hat'] = X_out['x_hat'].to(device)
@@ -765,7 +784,16 @@ class Custom_enh_Loss(nn.Module):
             self.loss["DISTS1"] = self.DISTS_loss_2(X_out['x_hat'], Y)
         if "LPIPS1" in self.target_lst:
             self.loss["LPIPS1"] = self.LPIPS_loss_2(X_out['x_hat'], Y)
-        
+        if "FSIM" in self.target_lst:
+            self.loss["FSIM"] = self.FSIMLoss(X_out['x_hat'], Y)
+        if "StyleLoss" in self.target_lst:
+            self.loss["StyleLoss"] = self.StyleLoss(X_out['x_hat'], Y)
+        #if "SF" in self.target_lst:
+           # self.loss["SF"] = self.sf(X_out['x_hat'], Y)   
+        if "NLPD" in self.target_lst:
+            self.loss["NLPD"] = self.NLPD(X_out['x_hat'], Y)    
+        if "ContentLoss" in self.target_lst:
+            self.loss["ContentLoss"] = self.ContentLoss(X_out['x_hat'], Y) 
         self.loss["loss"] = 0
         for cur_metrics, k in zip(self.target_lst, self.k_lst):
             self.loss["loss"] += k * self.loss[cur_metrics]
@@ -883,3 +911,25 @@ def get_met(X):
         return -cfg["run"]["loss_calc"]({"x_hat": torch.cat([X,X])}, torch.cat([X,X]))["loss"]
     else:
         return -cfg["run"]["loss_calc"]({"x_hat": X}, X)["loss"]
+
+
+
+def max_over_iter(arg):
+    max_val = 0
+    from collections.abc import Iterable
+    try:
+        if isinstance(arg, type(np.ndarray)):
+             max_val = max(max_val, max(arg_n))
+        elif isinstance(arg, torch.Tensor):
+            arg_n = arg.cpu().numpy()
+            max_val = max(max_val, max(arg_n))
+        elif isinstance(arg, dict):
+            b = [j for i,j in arg.items()]
+            for v in b:
+                max_val = max(max_over_iter(v), max_val)
+        elif isinstance(arg, Iterable):
+            for i in arg:
+                max_val = max(max_over_iter(i), max_val)
+    except Exception:
+        pass
+    

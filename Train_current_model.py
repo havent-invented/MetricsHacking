@@ -4,8 +4,8 @@ if cfg["general"]["use_wandb"]:
     import wandb
     wandb.init(project=cfg["general"]["project_name"], entity="havent_invented", name = cfg["general"]["name"], tags = {"Train"}, save_code = True)
     #wandb.config.update({"general": cfg["general"]})
-sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
-exec(open('main.py').read())#MAIN
+#sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
+#exec(open('main.py').read())#MAIN
 
 X = None
 cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst =cfg["general"]["met_names"], k_lst = cfg ["general"] ["k_lst"]).eval().requires_grad_(True).to(cfg["run"]["device"])
@@ -28,7 +28,9 @@ elif cfg["general"]["enhance_net"] == "smallnet_skips":
             i.retain_grad()
 elif cfg["general"]["enhance_net"] == "No" or cfg["general"]["enhance_net"] == "Identity": 
     cfg["run"]["net_enhance"] = enhance_Identity
-    
+elif cfg["general"]["enhance_net"] == "mobile_deepest_resnet24":
+    cfg["run"]["net_enhance"] = torch.load(os.path.join(cfg['general']['project_dir'], "OMGD/m24.ckpt")).to(cfg["run"]["device"]).requires_grad_(True)
+
 if "pretrained_model_path" in cfg["general"]:
     ckpt = torch.load(cfg["general"]['pretrained_model_path'])['model']
     cfg["run"]["net_enhance"].load_state_dict(ckpt)
@@ -45,6 +47,12 @@ else:
 if cfg["run"]["loss_calc"] == None:
     cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg["general"]["k_lst"]).eval().requires_grad_(True).to(cfg["run"]["device"])
 rdLoss = RateDistortionLoss()
+
+if 0:
+    cfg["run"]["loss_calc"] = torch.nn.DataParallel(cfg["run"]["loss_calc"])
+    cfg["run"]["net_codec"] =  torch.nn.DataParallel(cfg["run"]["net_codec"])
+    cfg["run"]["net_enhance"] = torch.nn.DataParallel(cfg["run"]["net_enhance"])
+
 
 try:
     os.mkdir(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"]))
@@ -151,7 +159,8 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
                 #aux_optimizer.zero_grad()
                 if not "order_pre_post" in cfg['general'] or cfg['general']['order_pre_post'] == 0:
                     X_enhance = cfg["run"]["net_enhance"](X)
-                    #X_enhance = torch.sigmoid(X_enhance)
+                    if cfg["general"]["sigmoid_activation"] == True: 
+                        X_enhance = torch.sigmoid(X_enhance)
                     X_enhance.data.clamp_(min=0,max=1)
                     X_out = cfg["run"]["net_codec"].forward(X_enhance)
                     X_out['x_hat'].data.clamp_(min=0,max=1)
@@ -164,11 +173,13 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
                     X_codec['x_hat'].data.clamp_(min=0,max=1)
                     X_out["x_hat"] = cfg["run"]["net_enhance"](X_codec["x_hat"])
                     #X_enhance = torch.sigmoid(X_enhance)
-                    
+                    if cfg["general"]["sigmoid_activation"] == True:            
+                        X_enhance = torch.sigmoid(X_enhance)
                     
                 #X_out['x_hat'] = torch.nan_to_num(X_out['x_hat'])
                 #Y = torch.nan_to_num(Y)
-                
+                if str(X.mean().item()) == 'nan' or str(X_out['x_hat'].mean().item()) == 'nan':
+                    continue
                 
                 loss = cfg["run"]["loss_calc"](X_out, Y)
                 if str(loss[list(loss.keys())[4]].item()) == 'nan':
@@ -188,9 +199,9 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
                     torch.nn.utils.clip_grad_norm_(parameters, 1.)
                     #torch.nn.utils.clip_grad_norm_(parameters, 10.)#0.05#0.1
                     #torch.nn.utils.clip_grad_value_(parameters, 1.)
-                    for par in parameters:
-                        if par.grad != None:
-                            par.grad = torch.nan_to_num(par.grad)
+                    #for par in parameters:
+                        #if par.grad != None:
+                            #par.grad = torch.nan_to_num(par.grad)
                     #list(parameters)[0] = torch.nan_to_num(list(parameters)[0])
                     if 1 or gradnorm_cur < 0.025:
                         cfg["run"]["optimizer"].step()

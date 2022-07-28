@@ -1,0 +1,54 @@
+general:
+  name: debug
+  project_name: MetricsHacking
+  cfg_dir: cfgs/debug.yaml
+  datalen_train: 1100
+  datalen_test: 150
+  max_epoch: 7
+  patience: 2
+  batch_size_train: 8
+  batch_size_test: 4
+  project_dir: .
+  quality: 1
+  mode: Train
+  break_flag: 0
+  center_crop: 0
+  codec: cheng2020_attn
+  blur_cfg:
+      blur_sigma_min: 0.1
+      blur_sigma_max: 2.0
+      blur_sz_min: 3
+      blur_sz_max: 5
+  dataset_dir: '/home/sinyukov.m/project/datasets/vimeo_triplet_dataset/vimeo_triplet/sequences/'
+  dataset_type: img
+  enhance: 1
+  enhance_net: smallnet_skips
+  eta_min: 1.0e-05
+  sigmoid_activation: 1
+  home_dir: ./home_dir/
+  k_lst:
+  - 1.0
+  logs_dir: logs/
+  lr_linear_stage: 3
+  met_names:
+  - DISTS
+  minimal_batch_sz: 0
+  optimize_image: 0
+  optimizer: AdamW
+  optimizer_opt:
+    lr: 0.001
+  order_pre_post: 0
+  patch_sz: 256
+  save_net_enhance: 1
+  save_netcodec: 0
+  to_crop: 1
+  use_wandb: 1
+  codec_metric: mse
+  codec_pretrained: 1
+  ckpt_recovery: 0
+  comment: ""
+run:
+  device: "cuda:0"
+  device_met : "cuda:0"
+  device_enh : "cuda:0"
+  device_sub : "cpu"

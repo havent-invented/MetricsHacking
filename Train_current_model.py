@@ -1,11 +1,10 @@
 import sys
 
+
 if cfg["general"]["use_wandb"]:
     import wandb
     wandb.init(project=cfg["general"]["project_name"], entity="havent_invented", name = cfg["general"]["name"], tags = {"Train"}, save_code = True)
-    #wandb.config.update({"general": cfg["general"]})
-#sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
-#exec(open('main.py').read())#MAIN
+    wandb.config.update({"general": cfg["general"]})
 
 X = None
 cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst =cfg["general"]["met_names"], k_lst = cfg ["general"] ["k_lst"]).eval().requires_grad_(True).to(cfg["run"]["device"])
@@ -58,8 +57,8 @@ try:
     os.mkdir(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"]))
 except Exception:
     pass   
-dataset_train = CustomImageDataset(dst_dir_vimeo,train= True, datalen = cfg["general"]["datalen_train"], center_crop = False)
-dataset_test = CustomImageDataset(dst_dir_vimeo,train= False, datalen = cfg["general"]["datalen_test"], center_crop = True)
+dataset_train = CustomImageDataset(cfg["general"]["dataset_dir"],train= True, datalen = cfg["general"]["datalen_train"], center_crop = False)
+dataset_test = CustomImageDataset(cfg["general"]["dataset_dir"],train= False, datalen = cfg["general"]["datalen_test"], center_crop = True)
 dataset_train = DataLoader(dataset_train, batch_size = cfg["general"]["batch_size_train"], shuffle = True)#8#4#8
 dataset_test = DataLoader(dataset_test, batch_size = cfg["general"]["batch_size_test"], shuffle = False)#8#4#4
 mse_loss = nn.MSELoss()
@@ -133,7 +132,22 @@ def calculate_met(times = 1):
 
 cfg["run"]["logger"] = Logger(cfg)
 cfg["run"]["logger"].write_cfg()
+ckpt_save_lst = ["optimizer", "net_enhance",]
 
+if cfg["general"]["ckpt_recovery"]:
+    print("!CKPT RECOVERY!")
+    try:
+        ckpt_ckpt = torch.load(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt"))
+        for k_i in ckpt_save_lst:
+            cfg["run"][k_i].load_state_dict(ckpt_ckpt[k_i])
+        import pickle
+        with open(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "plots.pkl"),'rb') as f:
+            logs_plot = pickle.load(f)
+        del ckpt_ckpt
+    except Exception:
+        print("CKPT LOAD FAILED")
+        raise
+    
 for epoch in tqdm(range(cfg["general"]["max_epoch"])):
     if cfg["general"]["break_flag"] == True:
         break
@@ -142,6 +156,7 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
     if skip_0epoch and epoch == 0:
         continue
     gradnorm_max = 0
+    torch.save({k_i : cfg["run"][k_i].state_dict() for k_i in ckpt_save_lst},  os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt"))
     for to_train in [True, False]:
         tqdm_dataset = tqdm(dataset_train if to_train else dataset_test)
         cfg["run"]["net_enhance"].train(to_train)
@@ -180,7 +195,6 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
                 #Y = torch.nan_to_num(Y)
                 if str(X.mean().item()) == 'nan' or str(X_out['x_hat'].mean().item()) == 'nan':
                     continue
-                
                 loss = cfg["run"]["loss_calc"](X_out, Y)
                 if str(loss[list(loss.keys())[4]].item()) == 'nan':
                     print("Exception: NAN in loss")

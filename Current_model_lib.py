@@ -1,10 +1,17 @@
 import sys
-if not "device" in cfg["run"]:
+try:
+    cfg
+except Exception:
+    cfg = {"WRONG" : "WRONG", "general" : {"device" : "cuda:0",  'project_dir' : "."}, "run" : {"device" : "cuda:0"}}
+    cfg["run"]["device"] = "cuda:0"
+    cfg["general"]["device"] = "cuda:0"
     device = "cuda:0"
+    cfg['general']['project_dir']
 import os
 import sys
 #sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
 #exec(open('main.py').read())#MAIN
+#print(cfg)
 sys.path.append(os.path.join(cfg['general']['project_dir'], "OMGD"))
 
 import compressai
@@ -27,19 +34,6 @@ from torch import nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 
-try:
-    cfg['general']['patch_sz']
-except Exception:
-    cfg['general']['patch_sz'] = 256
-dst_dir_vimeo = cfg['general']['dataset_dir'] 
-try:
-    dst_dir
-except Exception:
-    dst_dir = "P:/7videos/"  
-try:
-    home_dir
-except Exception:
-    home_dir = cfg['general']['home_dir']
 class enhance_Identity(nn.Module):
     def __init__(self):
         super().__init__()
@@ -800,7 +794,7 @@ class Custom_enh_Loss(nn.Module):
         return self.loss
 
 class Video_reader_read():
-    def __init__(self,name1 = dst_dir + "blue_hair_1920x1080_30.yuv.Y4M"):
+    def __init__(self,name1):
         self.nameGT = name1
         
     def get_frame(self):
@@ -850,7 +844,7 @@ def dir_of_dirs(paths):
 
 
 class Video_reader_dataset(Dataset):
-    def __init__(self, num_frames = None, name1 = dst_dir + "blue_hair_1920x1080_30.yuv.Y4M", minimal_batch_sz = 0):
+    def __init__(self, name1, num_frames = None, minimal_batch_sz = 0):
         super(CustomImageDataset).__init__()
         self.nameGT = name1
         self.temp_reader1 = skvideo.io.FFmpegReader(self.nameGT, outputdict={"-c:v" :" rawvideo","-f": "rawvideo"})
@@ -885,7 +879,7 @@ class CustomImageDataset(Dataset):
         self.train = train
         self.image = 0
         self.label = 0
-        self.img_names = dir_of_dirs(dir_of_dirs(dir_of_dirs([dst_dir_vimeo])))
+        self.img_names = dir_of_dirs(dir_of_dirs(dir_of_dirs([img_dir])))
         self.img_dir = img_dir
     def __len__(self):
         return self.datalen#9600#len(self.img_names)

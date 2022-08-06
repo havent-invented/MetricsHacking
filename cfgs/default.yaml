@@ -14,11 +14,6 @@ general:
   break_flag: 0
   center_crop: 0
   codec: cheng2020_attn
-  blur_cfg:
-      blur_sigma_min: 0.1
-      blur_sigma_max: 2.0
-      blur_sz_min: 3
-      blur_sz_max: 5
   dataset_dir: '/home/sinyukov.m/project/datasets/vimeo_triplet_dataset/vimeo_triplet/sequences/'
   dataset_type: img
   enhance: 1
@@ -46,6 +41,10 @@ general:
   codec_metric: mse
   codec_pretrained: 1
   ckpt_recovery: 0
+  blur_sigma_min: 2.0
+  blur_sigma_max: 2.0
+  blur_sz_min: 5
+  blur_sz_max: 5
   comment: ""
 run:
   device: "cuda:0"

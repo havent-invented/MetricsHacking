@@ -37,7 +37,7 @@ if "pretrained_model_path" in cfg["general"]:
 if cfg["general"]["codec"] == "No":
     cfg["run"]["net_codec"] = codec_Identity
 elif cfg["general"]["codec"] == "Blur":
-    cfg["run"]["net_codec"] = codec_Blur(sigma = (cfg["general"]["blur_cfg"]["blur_sigma_min"], cfg["general"]["blur_cfg"]["blur_sigma_max"]), kernel_sizes = (cfg["general"]["blur_cfg"]["blur_sz_min"], cfg["general"]["blur_cfg"]["blur_sz_max"])).to(cfg["run"]["device"])
+    cfg["run"]["net_codec"] = codec_Blur(sigma = (cfg["general"]["blur_sigma_min"], cfg["general"]["blur_sigma_max"]), kernel_sizes = (cfg["general"]["blur_sz_min"], cfg["general"]["blur_sz_max"])).to(cfg["run"]["device"])
 else:
     cfg["run"]["net_codec"] = cheng2020_attn(quality=cfg["general"]["quality"], pretrained = True, metric = cfg["general"]["codec_metric"]).to(cfg["run"]["device"]).requires_grad_(True)# ssf2020 -- video
 
@@ -189,7 +189,7 @@ for epoch in tqdm(range(cfg["general"]["max_epoch"])):
                     X_out["x_hat"] = cfg["run"]["net_enhance"](X_codec["x_hat"])
                     #X_enhance = torch.sigmoid(X_enhance)
                     if cfg["general"]["sigmoid_activation"] == True:            
-                        X_enhance = torch.sigmoid(X_enhance)
+                        X_out["x_hat"] = torch.sigmoid(X_out["x_hat"])
                     
                 #X_out['x_hat'] = torch.nan_to_num(X_out['x_hat'])
                 #Y = torch.nan_to_num(Y)

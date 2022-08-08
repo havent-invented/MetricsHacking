@@ -1,38 +1,80 @@
 import sys
-try:
-    cfg
-except Exception:
-    cfg = {"WRONG" : "WRONG", "general" : {"device" : "cuda:0",  'project_dir' : "."}, "run" : {"device" : "cuda:0"}}
-    cfg["run"]["device"] = "cuda:0"
-    cfg["general"]["device"] = "cuda:0"
-    device = "cuda:0"
-    cfg['general']['project_dir']
-import os
-import sys
-#sys.path.insert(1, "E:/VMAF_METRIX/NeuralNetworkCompression/")
-#exec(open('main.py').read())#MAIN
-#print(cfg)
-sys.path.append(os.path.join(cfg['general']['project_dir'], "OMGD"))
-
+import skvideo.io
+from argparse import ArgumentParser
+import time
+import torch
+import yaml
+from tqdm.notebook import tqdm
+import skimage
+import skimage.filters
+import skimage.io
+import matplotlib.pyplot as plt
+from skimage import exposure, img_as_float, img_as_ubyte
+from skimage.color import rgb2hsv, hsv2rgb
+from skimage.filters import unsharp_mask
+from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms.functional import resize, to_tensor, normalize
+from PIL import Image
+import itertools
+import skimage.metrics
+from skimage.metrics import mean_squared_error
+import shlex
+import subprocess
+import pandas as pd
+from multiprocessing import Pool
+#from line_profiler import LineProfiler
+import cv2
+import shutil
+import random
 import compressai
 import math
 from tools.early_stopping import EarlyStopping
 from tools.save_model import SaveBestHandler
 from compressai.zoo import bmshj2018_factorized, cheng2020_attn, mbt2018#,ssf2020
-import torch
 import torchvision.transforms
-import skvideo.io
-from PIL import Image
 import numpy as np
 from IPython.display import clear_output
-from tqdm.notebook import tqdm
+from piq import PieAPP
+import torch.nn as nn
+from torch import nn
+from torchvision.transforms.functional import resize, to_tensor, normalize
 #from CNNfeatures import get_features
 #from VQAmodel import VQAModel
-from argparse import ArgumentParser
-import time
-from torch import nn
 import torch.optim as optim
-import matplotlib.pyplot as plt
+import os
+try:
+    cfg
+except Exception:
+    cfg = {"general" : {"device" : "cuda:0",  'project_dir' : "."}, "run" : {"device" : "cuda:0"}, "WRONG" : "WRONG"}
+    cfg["run"]["device"] = "cuda:0"
+    cfg["general"]["device"] = "cuda:0"
+    device = "cuda:0"
+    cfg['general']['project_dir']
+
+if not "device" in cfg["run"]:
+    device = "cuda:0"
+
+sys.path.insert(1, '..')
+
+
+def Identity(img,arg1,arg2):
+    return img
+
+def axis_swaper(func):
+    def wrapper(*args):
+        args = np.swapaxes(args[0],0 , -1), *args[1:]
+        return np.swapaxes(func(*args),0, -1)
+    return wrapper
+
+try:
+    cfg['general']['patch_sz']
+except Exception:
+    cfg['general']['patch_sz'] = 256
+
+try:
+    dst_dir
+except Exception:
+    dst_dir = "P:/7videos/"  
 
 class enhance_Identity(nn.Module):
     def __init__(self):
@@ -48,51 +90,45 @@ class enhance_Identity(nn.Module):
         return self.forward(X)
     def to(self, device):
         return self
-def calculate_met(loss_calc, times = 1):
-    
-    logs_plot_cur1 = {}
-    logs_plot1 = {}
+
+
+def calculate_met(times = 1, cfg = cfg):
     for to_train in [True, False]:
         tqdm_dataset = tqdm(dataset_train if to_train else dataset_test)
         for frame in tqdm_dataset:
-            if not optimize_image:
-                X = frame.to(device)
-                Y = X.clone().detach().to(device)
+            if not cfg["general"]["optimize_image"]:
+                X = frame.to(cfg["run"]["device"])
+                Y = X.clone().detach().to(cfg["run"]["device"])
             X_enhance = enhance_Identity(X)
             X_enhance.data.clamp_(min=0,max=1)
-            X_out = net_codec.forward(X_enhance)
+            X_out = cfg["run"]["net_codec"].forward(X_enhance)
             X_out['x_hat'].data.clamp_(min=0,max=1)
             loss = cfg["run"]["loss_calc"](X_out, Y)
             for j in list(loss.keys()):
                 j_converted = j + ("_test" if not to_train else "")
-                if not j_converted in logs_plot_cur1:
-                    logs_plot_cur1[j_converted] = []
-                logs_plot_cur1[j_converted].append(loss[j].data.to("cpu").numpy())
+                if not j_converted in logs_plot_cur:
+                    logs_plot_cur[j_converted] = []
+                logs_plot_cur[j_converted].append(loss[j].data.to("cpu").numpy())
         for t in range(times):
-            for j in list(logs_plot_cur1.keys()):
-                if not j in logs_plot1:
-                    logs_plot1[j] = []
-                logs_plot1[j].append(np.mean(logs_plot_cur1[j]))
-                if cfg["general"]["use_wandb"]:
-                    wandb.log({j: np.mean(logs_plot_cur1[j])})
-    if cfg["general"]["use_wandb"]:
-        wandb.log({"Compressed": wandb.Image(X_out['x_hat']),  "GT": wandb.Image(Y)}) 
-    return logs_plot1
-
-enhance_Identity = enhance_Identity()
+            for j in list(logs_plot_cur.keys()):
+                if not j in logs_plot:
+                    logs_plot[j] = []
+                logs_plot[j].append(np.mean(logs_plot_cur[j]))
+        return logs_plot
 
 class codec_Blur(nn.Module):
-    def __init__(self, kernel_sizes = (3, 5) , sigma = (0.1, 2.0)):
+    def __init__(self, cfg, kernel_sizes = (3, 5) , sigma = (0.1, 2.0)):
         import torchvision
         super().__init__()
         import pickle
+        self.cfg = {"general": cfg['general']}
         self.kernel_sizes = kernel_sizes
         self.sigma = sigma 
         if self.kernel_sizes[0] == self.kernel_sizes[1]:
             self.convert_f = torchvision.transforms.GaussianBlur(kernel_size = self.kernel_sizes[0], sigma = self.sigma)
         self.X_hat = None
         #self.tmp = nn.Sequential(nn.ReLU(inplace=True),)
-        with open(os.path.join(cfg["general"]["project_dir"], 'sample_data/likelihoods.pkl'), 'rb') as f:
+        with open(os.path.join(self.cfg["general"]["project_dir"], 'sample_data/likelihoods.pkl'), 'rb') as f:
             self.X_hat = pickle.load(f)
         self.X_out = {"likelihoods": self.X_hat}
         class entropy_bottleneck:
@@ -114,13 +150,15 @@ class codec_Blur(nn.Module):
         return self
 
 
+
+enhance_Identity = enhance_Identity()
 class codec_Identity(nn.Module):
-    def __init__(self):
+    def __init__(self, cfg = cfg):
         super().__init__()
         import pickle
         self.X_hat = None
         #self.tmp = nn.Sequential(nn.ReLU(inplace=True),)
-        with open('./sample_data/likelihoods.pkl', 'rb') as f:
+        with open(os.path.join(cfg["general"]["project_dir"], 'sample_data/likelihoods.pkl'), 'rb') as f:
             self.X_hat = pickle.load(f)
         self.X_out = {"likelihoods": self.X_hat}
         class entropy_bottleneck:
@@ -129,8 +167,7 @@ class codec_Identity(nn.Module):
         self.entropy_bottleneck = entropy_bottleneck()
         self.entropy_bottleneck.loss = lambda : 0
     def named_parameters(self):
-        return {("3.quantiles",torch.nn.Parameter(torch.tensor([[0.]]))) : torch.nn.Parameter(torch.tensor([[0.]]))} 
-    
+        return {("3.quantiles",torch.nn.Parameter(torch.tensor([[0.]]))) : torch.nn.Parameter(torch.tensor([[0.]]))}
     def forward(self, X):
         self.X_out['x_hat'] = X
         return self.X_out
@@ -145,16 +182,7 @@ def convrelu(in_channels, out_channels, kernel, padding):
         nn.ReLU(inplace=True),
     )
 
-import torch
-import os
-import numpy as np
-import random
-from argparse import ArgumentParser
-from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms.functional import resize, to_tensor, normalize
-from PIL import Image
-#import h5py 
-
+'''
 class koniq(nn.Module):# TODO: FIX  inference
     def __init__(self, model_dir ="./koniq/", device = cfg["run"]["device"], to_train = True, to_crop = False):
         super().__init__()
@@ -210,6 +238,7 @@ class koniq(nn.Module):# TODO: FIX  inference
         return out
 import torch.nn as nn
 from torchvision.transforms.functional import resize, to_tensor, normalize
+
 class Linearity(nn.Module):
     def __init__(self, model_dir = "./LinearityIQA/LinearityIQA/", device = cfg["run"]["device"], to_train = True):
         super().__init__()
@@ -236,7 +265,6 @@ class Linearity(nn.Module):
             y = self.model(im)
             val = (y[-1]* self.k[-1] + self.b[-1]).mean()
         return val / 100.
-    
     
 def Linearity_met(im, device = cfg["run"]["device"],  model_dir = "./LinearityIQA/LinearityIQA/", to_train = True):
     sys.path.insert(1, model_dir)
@@ -315,7 +343,7 @@ class VSFA_loss(nn.Module):#TODO: check [0][0]
             input_length = self.features.shape[1] * torch.ones(1, 1)
             outputs = self.model(self.features, input_length)
         return outputs[0][0]
-from piq import PieAPP
+
 class BRISQ(nn.Module):
     def __init__(self, device = cfg["run"]["device"], to_train = True):
         super().__init__()
@@ -373,32 +401,33 @@ class paq2piq_model(nn.Module):#OK
                 global_score_batch += global_score
             global_score_batch = global_score_batch / batch_sz /100.
         return global_score_batch
+'''
 class smallnet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding="same"),
+        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding = 1),
                 nn.ReLU(inplace=True),)
         self.seq2 = nn.Sequential(
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 32, (3,3), padding="same"),
+            nn.Conv2d(16, 32, (3,3), padding = 1),
                 nn.LeakyReLU(),
-            nn.Conv2d(32, 16, (3,3), padding="same"),
+            nn.Conv2d(32, 16, (3,3), padding = 1),
                 nn.LeakyReLU(),)
         self.seq3 = nn.Sequential(
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1),
                 nn.LeakyReLU(),
             )
         self.seq4 = nn.Sequential(
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1),
                 nn.LeakyReLU(inplace=True),
-            nn.Conv2d(16, 16, (3,3), padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1),
                 nn.LeakyReLU(),)
-        self.seq5 = nn.Sequential(nn.Conv2d(16, 3, (3,3), padding="same"),)
+        self.seq5 = nn.Sequential(nn.Conv2d(16, 3, (3,3), padding = 1),)
         
     def forward(self, inputX):    
         x = self.seq1(inputX)
@@ -447,6 +476,7 @@ class smallnet_skips(nn.Module):
         #print(self.seq5)
         x = self.seq5(x)
         return x
+
 class ResNetUNet(nn.Module):
     def __init__(self, n_class):
         super().__init__()
@@ -532,39 +562,41 @@ class ResNetUNet(nn.Module):
         return out
 class Logger():
     def __init__(self, cfg):
-        self.cfg = cfg
+        self.cfg = {"general" : cfg["general"]}
         try:
-            os.mkdir(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"]))
+            os.mkdir(os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"]))
         except Exception:
             pass
     def write_cfg(self, ):
-        with open(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "cfg.yaml"), "w") as fh:  
-            yaml.dump({"general":cfg["general"]}, fh)
+        with open(os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"], "cfg.yaml"), "w") as fh:  
+            yaml.dump({"general":self.cfg["general"]}, fh)
+    def write_code(self, ):
+        try:
+            os.mkdir(os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"], "code"))
+        except Exception:
+            pass
+        src = os.path.join(self.cfg["general"]["project_dir"],'Current_model_lib.py')
+        dst = os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"], "code",'Current_model_lib.py')
+        shutil.copyfile(src, dst)
+        src = os.path.join(self.cfg["general"]["project_dir"],'Train_current_model.py')
+        dst = os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"], "code",'Train_current_model.py')
+        shutil.copyfile(src, dst)
+        #src = os.path.join(self.cfg["general"]["project_dir"],'main.py')
+        #dst = os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"], "code", 'main.py')
+        #shutil.copyfile(src, dst)
     def write_logs(self, ):
         try:
-            with open(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "logs.yaml"), "w") as fh:  
-                yaml.dump({"logs" : cfg["logs"]}, fh)
+            with open(os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"], "logs.yaml"), "w") as fh:  
+                yaml.dump({"logs" : self.cfg["logs"]}, fh)
         except Exception:
             print("exception while logging yaml")
         try:
-            np.save(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "logs.npy"), Log_1)
+            np.save(os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"], "logs.npy"), Log_1)
         except Exception:
             print("exception while logging npy")
     def save_img(self, args):
-        pltimshow_batch(args, filename = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "vis.png"))
-    def write_code(self, ):
-        try:
-            os.mkdir(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "code"))
-        except Exception:
-            pass
+        pltimshow_batch(args, filename = os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"], "vis.png"))
        
-        src = os.path.join(cfg["general"]["project_dir"],'Current_model_lib.py')
-        dst = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "code",'Current_model_lib.py')
-        shutil.copyfile(src, dst)
-        src = os.path.join(cfg["general"]["project_dir"],'Train_current_model.py')
-        dst = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "code",'Train_current_model.py')
-        shutil.copyfile(src, dst)
-         
         
 from piq import LPIPS as piq_LPIPS#PieAPP VSI, FSIM, NLPD, deepIQA
 from piq import DISTS as piq_DISTS
@@ -710,11 +742,10 @@ class Custom_enh_Loss(nn.Module):
             self.NLPD = IQA_pytorch.NLPD()
         if "ContentLoss" in self.target_lst:
             self.ContentLoss = piq.ContentLoss()
-
- 
+        
     def forward(self, X_out, Y):
         if X_out['x_hat'].device != Y.device:
-            X_out['x_hat'] = X_out['x_hat'].to(device)
+            X_out['x_hat'] = X_out['x_hat'].to(Y.device)
         self.loss = self.rdLoss(X_out, Y)
         self.loss['PSNR'] = 10 * torch.log10(1. / self.loss['mse'])
         if "LPIPS" in self.target_lst:
@@ -833,7 +864,6 @@ rdLoss = RateDistortionLoss()
 from torch.utils.data import Dataset, IterableDataset
 from torchvision.io import read_image
 from torch.utils.data import DataLoader
-import os
 import torchvision
 def dir_of_dirs(paths):
     A = []
@@ -872,8 +902,9 @@ class Video_reader_dataset(Dataset):
 
     
 class CustomImageDataset(Dataset):
-    def __init__(self, img_dir, transform=None, target_transform=None,train = True, datalen = 128, center_crop = False):
+    def __init__(self, img_dir, cfg, transform=None, target_transform=None,train = True, datalen = 128, center_crop = False):
         super(CustomImageDataset).__init__()
+        self.cfg = {"general" : cfg["general"]}
         self.center_crop = center_crop
         self.datalen = datalen
         self.train = train
@@ -892,22 +923,13 @@ class CustomImageDataset(Dataset):
             image = torch.cat([image for i in range(3)])
         self.image = image
         if self.center_crop:
-            self.image = torchvision.transforms.CenterCrop((cfg['general']['patch_sz'], cfg['general']['patch_sz']))(self.image)
+            self.image = torchvision.transforms.CenterCrop((self.cfg['general']['patch_sz'], self.cfg['general']['patch_sz']))(self.image)
         else:
-            self.image = torchvision.transforms.RandomResizedCrop((cfg['general']['patch_sz'],cfg['general']['patch_sz']))(self.image)
+            self.image = torchvision.transforms.RandomResizedCrop((self.cfg['general']['patch_sz'], self.cfg['general']['patch_sz']))(self.image)
         return self.image / 255.
     def close(self):
         del self.image
         
-
-def get_met(X):
-    if met_name == "VSFA":
-        return -cfg["run"]["loss_calc"]({"x_hat": torch.cat([X,X])}, torch.cat([X,X]))["loss"]
-    else:
-        return -cfg["run"]["loss_calc"]({"x_hat": X}, X)["loss"]
-
-
-
 def max_over_iter(arg):
     max_val = 0
     from collections.abc import Iterable
@@ -926,4 +948,10 @@ def max_over_iter(arg):
                 max_val = max(max_over_iter(i), max_val)
     except Exception:
         pass
-    
+    return max_val
+
+def get_met(X):
+    if met_name == "VSFA":
+        return -cfg["run"]["loss_calc"]({"x_hat": torch.cat([X,X])}, torch.cat([X,X]))["loss"]
+    else:
+        return -cfg["run"]["loss_calc"]({"x_hat": X}, X)["loss"]

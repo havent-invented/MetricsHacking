@@ -56,5 +56,6 @@ if args_p.k != None:
     cfg["general"]["met_names"] = [args_p.met, args_p.proxy]
     cfg["general"]["k_lst"] = [1, args_p.k]
 print(cfg)
-exec(open(os.path.join(cfg["general"]["project_dir"], "Current_model_lib.py")).read())
-exec(open('Train_current_model.py').read())
+
+from Train_current_model import train
+train(cfg)

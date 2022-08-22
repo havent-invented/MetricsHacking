@@ -40,6 +40,9 @@ def train(cfg):
         cfg["run"]["net_codec"] = codec_Identity
     elif cfg["general"]["codec"] == "Blur":
         cfg["run"]["net_codec"] = codec_Blur(cfg, sigma = (cfg["general"]["blur_sigma_min"], cfg["general"]["blur_sigma_max"]), kernel_sizes = (cfg["general"]["blur_sz_min"], cfg["general"]["blur_sz_max"])).to(cfg["run"]["device"])
+    elif cfg["general"]["codec"] == "jpeg":
+        from codec_jpeg import codec_JPEG
+        cfg["run"]["net_codec"] = codec_JPEG(cfg).to(cfg["run"]["device"])
     else:
         cfg["run"]["net_codec"] = cheng2020_attn(quality=cfg["general"]["quality"], pretrained = True, metric = cfg["general"]["codec_metric"]).to(cfg["run"]["device"]).requires_grad_(True)# ssf2020 -- video
     

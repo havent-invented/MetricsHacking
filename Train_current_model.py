@@ -43,6 +43,9 @@ def train(cfg):
     elif cfg["general"]["codec"] == "jpeg":
         from codec_jpeg import codec_JPEG
         cfg["run"]["net_codec"] = codec_JPEG(cfg).to(cfg["run"]["device"])
+    elif cfg["general"]["codec"] == "jpeg16":
+        from codec_jpeg_16 import codec_JPEG
+        cfg["run"]["net_codec"] = codec_JPEG(cfg).to(cfg["run"]["device"])
     else:
         cfg["run"]["net_codec"] = cheng2020_attn(quality=cfg["general"]["quality"], pretrained = True, metric = cfg["general"]["codec_metric"]).to(cfg["run"]["device"]).requires_grad_(True)# ssf2020 -- video
     
@@ -123,7 +126,7 @@ def train(cfg):
     
     cfg["run"]["logger"] = Logger(cfg)
     cfg["run"]["logger"].write_cfg()
-    ckpt_save_lst = ["optimizer", "net_enhance",]
+    ckpt_save_lst = ["net_enhance",]#["optimizer", "net_enhance",]
     
     if cfg["general"]["ckpt_recovery"]:
         print("!CKPT RECOVERY!")
@@ -147,7 +150,6 @@ def train(cfg):
         if skip_0epoch and epoch == 0:
             continue
         gradnorm_max = 0
-        torch.save({k_i : cfg["run"][k_i].state_dict() for k_i in ckpt_save_lst},  os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt"))
         for to_train in [True, False]:
             tqdm_dataset = tqdm(dataset_train if to_train else dataset_test)
             cfg["run"]["net_enhance"].train(to_train)
@@ -236,7 +238,7 @@ def train(cfg):
                 logs_plot[j].append(np.mean(logs_plot_cur[j]))
                 if cfg["general"]["use_wandb"]:
                     wandb.log({j: np.mean(logs_plot_cur[j])}, step = epoch)
-
+        torch.save({k_i : cfg["run"][k_i].state_dict() for k_i in ckpt_save_lst},  os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt"))
         clear_output()
         fig = plt.figure(figsize=(20,8))
         unique_names = list(np.unique(list(map(lambda x : x.split("_test")[0], list(logs_plot.keys())))))

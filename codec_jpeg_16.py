@@ -1,7 +1,7 @@
 import sys
 import torch.nn as nn 
-sys.path.append("./DiffJPEG/")
-from DiffJPEG import DiffJPEG as DiffJPEG_c
+sys.path.append("./DiffJPEG16/")
+from DiffJPEG16 import DiffJPEG as DiffJPEG_c
 import os
 
 class codec_JPEG(nn.Module):
@@ -10,7 +10,7 @@ class codec_JPEG(nn.Module):
         super().__init__()
         import pickle
         self.cfg = {"general": cfg['general']}
-        self.convert_f = DiffJPEG_c(cfg['general']['patch_sz'], cfg['general']['patch_sz'], quality = cfg["general"]["quality"]).to(cfg["run"]['device'])
+        self.convert_f = DiffJPEG_c.DiffJPEG(cfg['general']['patch_sz'], cfg['general']['patch_sz'], quality = cfg["general"]["quality"]).to(cfg["run"]['device'])
         self.X_hat = None
         with open(os.path.join(self.cfg["general"]["project_dir"], 'sample_data/likelihoods.pkl'), 'rb') as f:
             self.X_hat = pickle.load(f)

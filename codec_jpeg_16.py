@@ -3,7 +3,11 @@ import torch.nn as nn
 sys.path.append("./DiffJPEG16/")
 from DiffJPEG16 import DiffJPEG as DiffJPEG_c
 import os
-
+class entropy_bottleneck:
+    def __init__(self):
+        self.loss = lambda : 0
+def Zero_lambda():
+    return 0
 class codec_JPEG(nn.Module):
     def __init__(self, cfg):
         import torchvision
@@ -15,11 +19,8 @@ class codec_JPEG(nn.Module):
         with open(os.path.join(self.cfg["general"]["project_dir"], 'sample_data/likelihoods.pkl'), 'rb') as f:
             self.X_hat = pickle.load(f)
         self.X_out = {"likelihoods": self.X_hat}
-        class entropy_bottleneck:
-            def __init__(self):
-                self.loss = lambda : 0
         self.entropy_bottleneck = entropy_bottleneck()
-        self.entropy_bottleneck.loss = lambda : 0
+        self.entropy_bottleneck.loss = Zero_lambda
     def named_parameters(self):
         return {("3.quantiles",nn.Parameter(torch.tensor([[0.]]))) : nn.Parameter(torch.tensor([[0.]]))} 
     def forward(self, X):

@@ -3,6 +3,7 @@ import numpy as np
 import os
 import pickle
 import yaml
+import matplotlib.cm as cm
 def load_cfg_from_yaml(path):
     with open(path) as fh:
         cfg = yaml.load(fh, Loader=yaml.FullLoader)
@@ -88,12 +89,14 @@ def plot_all():
                 print(met_nam,"metrics gain:", val_no - val_impr, "metrics base_value:",val_no, "metrics_preprocessed_value:", val_impr, "bpp_gain:",val_no_bpp - val_impr_bpp,"bpp_base_value:", val_no_bpp, "bpp_preprocessed_value:",val_impr_bpp, list(Log_I['cfgs'].keys())[0], key)
 #plot_all()
 
-def plot_RD_calc():
+def plot_RD_calc(pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "cheng2020_attn", "datalen_train" : 11000, "datalen_test" : 1500}}, \
+                pattern2 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "Blur1", "comment" : "default_TheRun"}}, \
+                pattern = {'general' : {'comment' : "Identity_run", "datalen_train" : 11000, "datalen_test" : 1500 }}, fig_nam = "fig.png"):
     #pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "cheng2020_attn", "comment" : "default_TheRun2107"}}
     #pattern2 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "cheng2020_attn", "comment" : "default_TheRun"}}
-    pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "cheng2020_attn", "datalen_train" : 11000, "datalen_test" : 1500}}
-    pattern2 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "Blur1", "comment" : "default_TheRun"}}
-    pattern = {'general' : {'comment' : "Identity_run", "datalen_train" : 11000, "datalen_test" : 1500 }}#"codec_metric" : cfg['general']["codec_metric"], "quality" : cfg['general']["quality"]
+    #pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "cheng2020_attn", "datalen_train" : 11000, "datalen_test" : 1500}}
+    #pattern2 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "Blur1", "comment" : "default_TheRun"}}
+    #pattern = {'general' : {'comment' : "Identity_run", "datalen_train" : 11000, "datalen_test" : 1500 }}#"codec_metric" : cfg['general']["codec_metric"], "quality" : cfg['general']["quality"]
     # 'met_names' :  [cfg['general']["met_names"][0]]
     Log = get_names("./logs/", filter_by_cfg, pattern2)
     Log1 = get_names("./logs/", filter_by_cfg, pattern1)
@@ -102,12 +105,23 @@ def plot_RD_calc():
     RD_curve = {}
     #
     for log, cfg, key in zip(Log['logs'].values(), Log['cfgs'].values(), Log['cfgs'].keys()):
+        #print(met_nam)
+        if not "general" in cfg.keys() or not "met_names" in cfg['general'].keys():
+            continue
+
         met_nam = cfg['general']['met_names'][0]
+        if not met_nam + "_test" in log.keys():
+            continue
         val_impr = log[met_nam + "_test"][-1]
-        val_impr_bpp = log["bpp_loss_test"][-1]
+
+        if cfg['general']["codec"] == "jpeg" or cfg['general']["codec"] == "jpeg16":
+            val_impr_bpp = cfg['general']["quality"]
+        else:
+            val_impr_bpp = log["bpp_loss_test"][-1]
 
         print(met_nam, "metrics_preprocessed_value:", val_impr, "bpp_preprocessed_value:", val_impr_bpp, list(Log['cfgs'].keys())[0], key)
-        nam = cfg['general']["comment"]
+        nam = cfg['general']["comment"] + ("_Identity" if not "Identity" in cfg['general']['comment'] and cfg['general']['enhance_net'] == "No" else "")
+
         if not (cfg['general']["met_names"][0] in RD_curve):
             RD_curve[cfg['general']["met_names"][0]] = {}
         if not (nam in RD_curve[cfg['general']["met_names"][0]]):
@@ -119,20 +133,25 @@ def plot_RD_calc():
         RD_curve[cfg['general']["met_names"][0]][nam]['bpp'].append(val_impr_bpp)
     return RD_curve
 
-def plot_RD_show(RD_curve, show_mode = 0):
+def plot_RD_show(RD_curve, show_mode = 0, fig_nam = "fig.png"):
     plot_len = len(RD_curve.keys())
     import matplotlib.pyplot as plt
     fig = plt.figure(figsize = (12,12))
     axes = fig.subplots(nrows=plot_len, ncols=1)
+    
+
     for plot_idx, met_nam in enumerate(RD_curve):
+        colors = cm.rainbow(np.linspace(0, 1, len(RD_curve[met_nam])))
         for run_idx, run_nam in enumerate(RD_curve[met_nam]):
-            axes[plot_idx].plot(RD_curve[met_nam][run_nam]['bpp'], RD_curve[met_nam][run_nam]['met'], label = run_nam)
-            axes[plot_idx].scatter(RD_curve[met_nam][run_nam]['bpp'], RD_curve[met_nam][run_nam]['met'])
+            if "Identity" in run_nam:
+                axes[plot_idx].plot(RD_curve[met_nam][run_nam]['bpp'], RD_curve[met_nam][run_nam]['met'], color = colors[run_idx])
+            axes[plot_idx].scatter(RD_curve[met_nam][run_nam]['bpp'], RD_curve[met_nam][run_nam]['met'], label = run_nam, color = colors[run_idx])
+            
             axes[plot_idx].set_ylabel(met_nam)
             axes[plot_idx].set_xlabel("bpp")
         axes[plot_idx].legend()
     fig.tight_layout()
-    fig.savefig("fig.png")
+    fig.savefig(fig_nam)
 def RD_resort(RD_curve):
     for i, i_n in enumerate(RD_curve):
         for j, j_n in enumerate(RD_curve[i_n]):
@@ -140,7 +159,23 @@ def RD_resort(RD_curve):
             RD_curve[i_n][j_n]['bpp'] = bpp = [k[0] for k in sorted_bpp_met]
             RD_curve[i_n][j_n]['met'] = met = [k[1] for k in sorted_bpp_met]
     return RD_curve    
-RD_curve = plot_RD_calc()
-RD_curve = RD_resort(RD_curve)
-plot_RD_show(RD_curve)
-print(RD_curve)
+#RD_curve_diffjpeg = plot_RD_calc(pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "jpeg", "datalen_train" : 11000, "datalen_test" : 1500}}, \
+                #pattern2 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "jpeg", "comment" : "default_TheRun"}}, \
+                #pattern = {'general' : {'comment' : "Identity_run", 'codec' :  "jpeg","datalen_train" : 11000, "datalen_test" : 1500 }})
+
+
+RD_curve_real_jpeg = plot_RD_calc(pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "jpeg_real_pil_post" ,'codec' :  "jpeg_real_pil", "datalen_train" : 11000, "datalen_test" : 1500}}, \
+                pattern2 = {'general': {'cfg_dir' : "cfgs/default.yaml", "comment" : "jpeg_real_pil", "codec" : "jpeg_real_pil"}}, \
+                pattern = {'general' : {'comment' : "jpeg_real_pil_Identity", "datalen_train" : 11000, "datalen_test" : 1500 }})
+
+ 
+
+#RD_curve_real_jpegcv2 = plot_RD_calc(pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "jpeg_real_cv2", "datalen_train" : 11000, "datalen_test" : 1500}}, \
+#               pattern2 = {'general': {'cfg_dir' : "cfgs/default.yaml", "comment" : "jpeg_real_pil11"}}, \
+#                pattern = {'general' : {'comment' : "jpeg_real_pil_Identity1", "datalen_train" : 11000, "datalen_test" : 1500 }})
+
+
+
+RD_curve = RD_resort(RD_curve_real_jpeg)
+plot_RD_show(RD_curve, fig_nam = "jpeg_real_pil.png")
+print(RD_curve) 

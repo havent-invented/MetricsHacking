@@ -405,29 +405,29 @@ class paq2piq_model(nn.Module):#OK
 class smallnet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding = 1),
+        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding = 1, padding_mode = 'reflect' ),
                 nn.ReLU(inplace=True),)
         self.seq2 = nn.Sequential(
-            nn.Conv2d(16, 16, (3,3), padding = 1),
+            nn.Conv2d(16, 16, (3,3), padding = 1, padding_mode = 'reflect'),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 32, (3,3), padding = 1),
+            nn.Conv2d(16, 32, (3,3), padding = 1, padding_mode = 'reflect'),
                 nn.LeakyReLU(),
-            nn.Conv2d(32, 16, (3,3), padding = 1),
+            nn.Conv2d(32, 16, (3,3), padding = 1, padding_mode = 'reflect'),
                 nn.LeakyReLU(),)
         self.seq3 = nn.Sequential(
-            nn.Conv2d(16, 16, (3,3), padding = 1),
+            nn.Conv2d(16, 16, (3,3), padding = 1, padding_mode = 'reflect'),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3), padding = 1),
+            nn.Conv2d(16, 16, (3,3), padding = 1, padding_mode = 'reflect'),
                 nn.LeakyReLU(),
             )
         self.seq4 = nn.Sequential(
-            nn.Conv2d(16, 16, (3,3), padding = 1),
+            nn.Conv2d(16, 16, (3,3), padding = 1, padding_mode = 'reflect'),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3), padding = 1),
+            nn.Conv2d(16, 16, (3,3), padding = 1, padding_mode = 'reflect'),
                 nn.LeakyReLU(inplace=True),
-            nn.Conv2d(16, 16, (3,3), padding = 1),
+            nn.Conv2d(16, 16, (3,3), padding = 1, padding_mode = 'reflect'),
                 nn.LeakyReLU(),)
-        self.seq5 = nn.Sequential(nn.Conv2d(16, 3, (3,3), padding = 1),)
+        self.seq5 = nn.Sequential(nn.Conv2d(16, 3, (3,3), padding = 1, padding_mode = 'reflect'),)
         
     def forward(self, inputX):    
         x = self.seq1(inputX)
@@ -442,29 +442,29 @@ class smallnet(nn.Module):
 class smallnet_skips(nn.Module):
     def __init__(self):
         super().__init__()
-        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding = 1),#, padding="same"),
+        self.seq1 = nn.Sequential(nn.Conv2d(3, 16, (3,3), padding = 1, padding_mode = 'reflect'),#, padding="same"),
                 nn.ReLU(inplace=True),)
         self.seq2 = nn.Sequential(
-            nn.Conv2d(16, 16, (3,3),padding = 1),# padding="same"),
+            nn.Conv2d(16, 16, (3,3),padding = 1, padding_mode = 'reflect'),# padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 32, (3,3), padding = 1),# padding="same"),
+            nn.Conv2d(16, 32, (3,3), padding = 1, padding_mode = 'reflect'),# padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(32, 16, (3,3), padding = 1), #padding="same"),
+            nn.Conv2d(32, 16, (3,3), padding = 1, padding_mode = 'reflect'), #padding="same"),
                 nn.LeakyReLU(),)
         self.seq3 = nn.Sequential(
-            nn.Conv2d(32, 16, (3,3), padding = 1), #padding="same"),
+            nn.Conv2d(32, 16, (3,3), padding = 1, padding_mode = 'reflect'), #padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3), padding = 1),# padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1, padding_mode = 'reflect'),# padding="same"),
                 nn.LeakyReLU(),
             )
         self.seq4 = nn.Sequential(
-            nn.Conv2d(48, 16, (3,3), padding = 1), #padding="same"),
+            nn.Conv2d(48, 16, (3,3), padding = 1, padding_mode = 'reflect'), #padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3), padding = 1), #padding="same"),
+            nn.Conv2d(16, 16, (3,3), padding = 1, padding_mode = 'reflect'), #padding="same"),
                 nn.LeakyReLU(),
-            nn.Conv2d(16, 16, (3,3),padding = 1), #padding="same"),
+            nn.Conv2d(16, 16, (3,3),padding = 1, padding_mode = 'reflect'), #padding="same"),
                 nn.LeakyReLU(),)
-        self.seq5 = nn.Sequential(nn.Conv2d(80, 3, (3,3),padding = 1)) #padding="same"),)
+        self.seq5 = nn.Sequential(nn.Conv2d(80, 3, (3,3),padding = 1, padding_mode = 'reflect')) #padding="same"),)
         
     def forward(self, inputX):    
         x = self.seq1(inputX)
@@ -747,6 +747,9 @@ class Custom_enh_Loss(nn.Module):
         if X_out['x_hat'].device != Y.device:
             X_out['x_hat'] = X_out['x_hat'].to(Y.device)
         self.loss = self.rdLoss(X_out, Y)
+        if 'bpp_loss' in X_out.keys():
+            self.loss['bpp_loss'] = X_out['bpp_loss']
+
         self.loss['PSNR'] = 10 * torch.log10(1. / self.loss['mse'])
         if "LPIPS" in self.target_lst:
             self.loss["LPIPS"] = self.lpips(X_out['x_hat'], Y)

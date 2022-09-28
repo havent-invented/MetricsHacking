@@ -7,9 +7,12 @@ def train(cfg):
         wandb.init(project=cfg["general"]["project_name"], entity="havent_invented", name = cfg["general"]["name"], tags = {"Train"}, save_code = True)
         wandb.config.update({"general": cfg["general"]})
     
+    if not os.path.exists(cfg["general"]["home_dir"]):
+        os.makedirs(cfg["general"]["home_dir"])
+
+    
     X = None
     cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg ["general"] ["k_lst"]).eval().requires_grad_(True).to(cfg["run"]["device"])
-    
     if cfg["general"]["enhance_net"] == "Resnet18Unet":
         cfg["run"]["net_enhance"] = ResNetUNet(3).to(cfg["run"]["device"]) 
         #cfg["run"]["net_enhance"] = nn.Sequential(nn.Conv2d(3, 3, 3,1, "same"),)
@@ -46,14 +49,33 @@ def train(cfg):
     elif cfg["general"]["codec"] == "jpeg16":
         from codec_jpeg_16 import codec_JPEG
         cfg["run"]["net_codec"] = codec_JPEG(cfg).to(cfg["run"]["device"])
+    elif cfg['general']['codec'] == "ODVGAN":
+        sys.path.append("../OD_VGAN/")
+        #cfg["run"]["net_codec"] = torch.load(cfg["general"]["od_vgan_model_path"]).to(cfg["run"]["device"])      
+        from codec_od_vgan import codec_ODVGAN 
+        cfg["run"]["net_codec"] = codec_ODVGAN(cfg).to(cfg["run"]["device"])
+    elif cfg['general']['codec'] == "jpeg_real_ffmpeg":
+        from compress_ffmpeg_jpeg import codec_jpeg_real
+        os.system("mkdir /dev/shm/sinyukov.m/")
+        cfg["run"]["net_codec"] = codec_jpeg_real(cfg['general']['quality'], compress_path = cfg['general']['home_dir'], mode = 0, x_hat_format = True).to(cfg["run"]["device"])
+    elif cfg['general']['codec'] == "jpeg_real_pil":
+        from compress_ffmpeg_jpeg import codec_jpeg_real
+        cfg["run"]["net_codec"] = codec_jpeg_real(cfg['general']['quality'], compress_path = cfg['general']['home_dir'], mode = 1, x_hat_format = True).to(cfg["run"]["device"])
+    elif cfg['general']['codec'] == "jpeg_real_cv2":
+        from compress_ffmpeg_jpeg import codec_jpeg_real
+        cfg["run"]["net_codec"] = codec_jpeg_real(cfg['general']['quality'], compress_path = cfg['general']['home_dir'], mode = 2, x_hat_format = True).to(cfg["run"]["device"])
+    elif cfg['general']['codec'] == "img_h264_real":
+        from compress_H264 import codec_H264_real
+        cfg["run"]["net_codec"] = codec_H264_real(cfg['general']['quality'], compress_path = cfg['general']['home_dir'] , x_hat_format = True).to(cfg["run"]["device"])
     else:
         cfg["run"]["net_codec"] = cheng2020_attn(quality=cfg["general"]["quality"], pretrained = True, metric = cfg["general"]["codec_metric"]).to(cfg["run"]["device"]).requires_grad_(True)# ssf2020 -- video
     
     if cfg["run"]["loss_calc"] == None:
-        cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg["general"]["k_lst"]).eval().requires_grad_(True).to(cfg["run"]["device"])
+        cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg["general"]["k_lst"]).eval().requires_grad_(False).to(cfg["run"]["device"])
     rdLoss = RateDistortionLoss()
     
     if 0:
+        torch.nn.parallel.DistributedDataParallel
         cfg["run"]["loss_calc"] = torch.nn.DataParallel(cfg["run"]["loss_calc"])
         cfg["run"]["net_codec"] =  torch.nn.DataParallel(cfg["run"]["net_codec"])
         cfg["run"]["net_enhance"] = torch.nn.DataParallel(cfg["run"]["net_enhance"])
@@ -65,9 +87,13 @@ def train(cfg):
         pass   
     dataset_train = CustomImageDataset(cfg["general"]["dataset_dir"],cfg, train= True, datalen = cfg["general"]["datalen_train"], center_crop = False)
     dataset_test = CustomImageDataset(cfg["general"]["dataset_dir"],cfg, train= False, datalen = cfg["general"]["datalen_test"], center_crop = True)
-    dataset_train = DataLoader(dataset_train, batch_size = cfg["general"]["batch_size_train"], shuffle = True)#8#4#8
-    dataset_test = DataLoader(dataset_test, batch_size = cfg["general"]["batch_size_test"], shuffle = False)#8#4#4
-    
+    dataset_train = DataLoader(dataset_train, batch_size = cfg["general"]["batch_size_train"], shuffle = True, num_workers = cfg["general"]["num_workers"])#8#4#8
+    dataset_test = DataLoader(dataset_test, batch_size = cfg["general"]["batch_size_test"], shuffle = False, num_workers = cfg["general"]["num_workers"])#8#4#4
+
+    #if 1:
+    #    dataset_train = torch.nn.DataParallel(dataset_train)
+    #    dataset_test = torch.nn.DataParallel(dataset_test)
+
     if cfg["general"]["optimize_image"]:
         X = next(iter(dataset_train)).detach().to(cfg["run"]["device"]).requires_grad_()
         Y = X.clone().detach().to(cfg["run"]["device"]).requires_grad_()
@@ -131,16 +157,27 @@ def train(cfg):
     if cfg["general"]["ckpt_recovery"]:
         print("!CKPT RECOVERY!")
         try:
-            ckpt_ckpt = torch.load(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt"))
+            if cfg["general"]["ckpt_recovery_path"] == "":
+                cfg["general"]["ckpt_recovery_path"] = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt")
+            ckpt_ckpt = torch.load(cfg["general"]["ckpt_recovery_path"])
             for k_i in ckpt_save_lst:
                 cfg["run"][k_i].load_state_dict(ckpt_ckpt[k_i])
-            import pickle
-            with open(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "plots.pkl"),'rb') as f:
-                logs_plot = pickle.load(f)
-            del ckpt_ckpt
+                print(f"{k_i} loaded from ckpt") 
         except Exception:
             print("CKPT LOAD FAILED")
             raise
+        if cfg["general"]["ckpt_recovery_path"] == "" or cfg["general"]["ckpt_recovery_path"] == os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt"):
+            try:
+                import pickle
+                with open(os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "plots.pkl"),'rb') as f:
+                    logs_plot = pickle.load(f)
+                del ckpt_ckpt
+            except Exception:
+                print("LOG LOAD FAILED")
+                if cfg["general"]["ckpt_recovery_path"] == "" or cfg["general"]["ckpt_recovery_path"] == os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt"):
+                    raise
+            
+            
         
     for epoch in tqdm(range(cfg["general"]["max_epoch"])):
         if cfg["general"]["break_flag"] == True:
@@ -153,7 +190,7 @@ def train(cfg):
         for to_train in [True, False]:
             tqdm_dataset = tqdm(dataset_train if to_train else dataset_test)
             cfg["run"]["net_enhance"].train(to_train)
-            with (torch.enable_grad() if to_train else torch.no_grad()):
+            with (torch.enable_grad() if (to_train and cfg["general"]["train_mode"]) else torch.no_grad()):
                 for frame in tqdm_dataset:
                     idx_video += 1
                     if not cfg["general"]["optimize_image"]:
@@ -171,6 +208,7 @@ def train(cfg):
                             X_enhance = torch.sigmoid(X_enhance)
                         X_enhance.data.clamp_(min=0,max=1)
                         X_out = cfg["run"]["net_codec"].forward(X_enhance)
+                        
                         X_out['x_hat'].data.clamp_(min=0,max=1)
                         X_out["x_hat"] = X_out["x_hat"][..., :X_enhance.shape[-2], :X_enhance.shape[-1]]
                     else:
@@ -186,6 +224,8 @@ def train(cfg):
                         
                     #X_out['x_hat'] = torch.nan_to_num(X_out['x_hat'])
                     #Y = torch.nan_to_num(Y)
+                    if "bpp_loss" in X_codec.keys():
+                        X_out['bpp_loss'] = X_codec['bpp_loss']
                     if str(X.mean().item()) == 'nan' or str(X_out['x_hat'].mean().item()) == 'nan':
                         continue
                     loss = cfg["run"]["loss_calc"](X_out, Y)
@@ -193,7 +233,7 @@ def train(cfg):
                         print("Exception: NAN in loss")
                     lmbda = 1e-2
         
-                    if epoch != 0 and to_train:
+                    if epoch != 0 and to_train and cfg["general"]["train_mode"]:
                         loss["loss"].backward()
                         for p in list(filter(lambda p: p.grad is not None, parameters)):
                             #gradnorm_cur = abs(p.grad.data.norm(2).item())
@@ -210,9 +250,9 @@ def train(cfg):
                             #if par.grad != None:
                                 #par.grad = torch.nan_to_num(par.grad)
                         #list(parameters)[0] = torch.nan_to_num(list(parameters)[0])
-                        if 1 or gradnorm_cur < 0.025:
+                        if (1 or gradnorm_cur < 0.025) and cfg["general"]["train_mode"]:
                             cfg["run"]["optimizer"].step()
-                        if epoch > cfg["general"]["lr_linear_stage"]:
+                        if epoch > cfg["general"]["lr_linear_stage"] and cfg["general"]["train_mode"]:
                             cfg["run"]["scheduler"].step()
                     #loss["aux_loss"] = net_codec.aux_loss()
                     #if epoch != 0 and to_train:
@@ -238,7 +278,8 @@ def train(cfg):
                 logs_plot[j].append(np.mean(logs_plot_cur[j]))
                 if cfg["general"]["use_wandb"]:
                     wandb.log({j: np.mean(logs_plot_cur[j])}, step = epoch)
-        torch.save({k_i : cfg["run"][k_i].state_dict() for k_i in ckpt_save_lst},  os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt"))
+        if cfg["general"]["save_ckpt"]:
+            torch.save({k_i : cfg["run"][k_i].state_dict() for k_i in ckpt_save_lst},  os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "ckpt.ckpt"))
         clear_output()
         fig = plt.figure(figsize=(20,8))
         unique_names = list(np.unique(list(map(lambda x : x.split("_test")[0], list(logs_plot.keys())))))

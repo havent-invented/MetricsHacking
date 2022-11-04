@@ -221,11 +221,12 @@ def train(cfg):
                         #X_enhance = torch.sigmoid(X_enhance)
                         if cfg["general"]["sigmoid_activation"] == True:            
                             X_out["x_hat"] = torch.sigmoid(X_out["x_hat"])
+                        if "bpp_loss" in X_codec.keys():
+                            X_out['bpp_loss'] = X_codec['bpp_loss']
                         
                     #X_out['x_hat'] = torch.nan_to_num(X_out['x_hat'])
                     #Y = torch.nan_to_num(Y)
-                    if "bpp_loss" in X_codec.keys():
-                        X_out['bpp_loss'] = X_codec['bpp_loss']
+                    
                     if str(X.mean().item()) == 'nan' or str(X_out['x_hat'].mean().item()) == 'nan':
                         continue
                     loss = cfg["run"]["loss_calc"](X_out, Y)

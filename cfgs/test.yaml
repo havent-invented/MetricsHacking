@@ -21,6 +21,7 @@ general:
       blur_sz_max: 5
   dataset_dir: '/home/sinyukov.m/project/datasets/vimeo_triplet_dataset/vimeo_triplet/sequences/'
   dataset_type: img
+  od_vgan_model_path: "../OD_VGAN/model_zoo/model_H264n_1step_vimeo90kIframe_noisntancenorm_deletedallnorm_jpegp3_d.ckpt"
   enhance: 1
   enhance_net: smallnet_skips
   eta_min: 1.0e-05
@@ -46,6 +47,10 @@ general:
   codec_metric: mse
   codec_pretrained: 1
   ckpt_recovery: 0
+  num_workers: 0
+  ckpt_recovery_path: ""
+  train_mode: 1
+  save_ckpt: 1
   comment: ""
 run:
   device: "cuda:0"

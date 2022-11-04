@@ -596,8 +596,21 @@ class Logger():
             print("exception while logging npy")
     def save_img(self, args):
         pltimshow_batch(args, filename = os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"], "vis.png"))
-       
+    def save_img_from_dataset(self, X, img_nam, subdir = None):
+        imgs_path = os.path.join(self.cfg["general"]["logs_dir"], self.cfg["general"]["name"],"imgs")
         
+        if not os.path.exists(imgs_path):
+            os.mkdir(imgs_path)
+        if subdir == None:
+            imgs_path_subdir = imgs_path
+        else:
+            imgs_path_subdir = os.path.join(imgs_path, subdir)
+        if not os.path.exists(imgs_path_subdir):
+            os.mkdir(imgs_path_subdir)
+        img_full_path = os.path.join(imgs_path_subdir, img_nam)
+        torchvision.utils.save_image(X, img_full_path)  
+
+
 from piq import LPIPS as piq_LPIPS#PieAPP VSI, FSIM, NLPD, deepIQA
 from piq import DISTS as piq_DISTS
 import IQA_pytorch as iqa#SSIM, GMSD, LPIPSvgg, DISTS
@@ -827,6 +840,23 @@ class Custom_enh_Loss(nn.Module):
             self.loss["loss"] += k * self.loss[cur_metrics]
         return self.loss
 
+class Custom_enh_Loss_seq(nn.Module):
+    def __init__(self, lmbda=1e-2, device = cfg["run"]["device"], target_lst = ["VSFA", "mse"], k_lst = [1, 2000.]):
+        super().__init__()
+        self.k_lst = k_lst
+        self.target_lst = target_lst
+        self.rdLoss = RateDistortionLoss(lmbda)
+    def forward(self, X_out, Y):
+        global_loss = {}
+        for idx in range(len(self.target_lst)):
+            cur_loss_f = Custom_enh_Loss(target_lst = [self.target_lst[idx]], device = device, k_lst = [self.k_lst[idx]]).to(device)
+            cur_loss = cur_loss_f(X_out, Y)
+            global_loss.update(cur_loss)
+            del cur_loss_f
+        return global_loss
+
+
+
 class Video_reader_read():
     def __init__(self,name1):
         self.nameGT = name1
@@ -905,15 +935,16 @@ class Video_reader_dataset(Dataset):
 
     
 class CustomImageDataset(Dataset):
-    def __init__(self, img_dir, cfg, transform=None, target_transform=None,train = True, datalen = 128, center_crop = False):
+    def __init__(self, img_dir, cfg, transform=None, target_transform=None,train = True, datalen = 128, center_crop = False, return_name = False):
         super(CustomImageDataset).__init__()
         self.cfg = {"general" : cfg["general"]}
+        self.return_name = return_name
         self.center_crop = center_crop
-        self.datalen = datalen
         self.train = train
         self.image = 0
         self.label = 0
         self.img_names = dir_of_dirs(dir_of_dirs(dir_of_dirs([img_dir])))
+        self.datalen = min(datalen, len(self.img_names))
         self.img_dir = img_dir
     def __len__(self):
         return self.datalen#9600#len(self.img_names)
@@ -929,7 +960,10 @@ class CustomImageDataset(Dataset):
             self.image = torchvision.transforms.CenterCrop((self.cfg['general']['patch_sz'], self.cfg['general']['patch_sz']))(self.image)
         else:
             self.image = torchvision.transforms.RandomResizedCrop((self.cfg['general']['patch_sz'], self.cfg['general']['patch_sz']))(self.image)
-        return self.image / 255.
+        if self.return_name:
+            return self.image / 255., self.img_names[idx]
+        else:
+            return self.image / 255. 
     def close(self):
         del self.image
         

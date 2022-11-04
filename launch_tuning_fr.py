@@ -9,6 +9,10 @@ np.random.seed(1)
 import torch
 torch.manual_seed(1)
 parser = argparse.ArgumentParser(description='VQM hacking')
+
+parser.add_argument('-mets', nargs='+', help='Met names', default=None)
+parser.add_argument('-ks', nargs='+', help='Met names', default=None)
+
 with open("cfgs/default.yaml") as fh:
     cfg_tmp = yaml.load(fh, Loader=yaml.FullLoader)
 parser.add_argument(
@@ -48,14 +52,24 @@ for k in cfg["general"].keys():
     if k in args_p.__dict__.keys() and args_p.__dict__[k] != None:
         cfg["general"][k] = args_p.__dict__[k]
 
-
-if args_p.met != None:
+if args_p.mets is not None:
+    cfg["general"]["met_names"] = args_p.mets
+elif args_p.met != None:
     cfg["general"]["met_names"] =[args_p.met,]
 
-if args_p.k != None:
+if args_p.ks is not None:
+    cfg["general"]["k_lst"] = [float(i) for i in args_p.ks]
+elif args_p.k != None:
     cfg["general"]["met_names"] = [args_p.met, args_p.proxy]
     cfg["general"]["k_lst"] = [1, args_p.k]
 print(cfg)
 
+#from Train_current_model import train
+#train(cfg)
+
 from Train_current_model import train
-train(cfg)
+from Test_models import test
+if cfg["general"]["mode"].lower() == "train":
+    train(cfg)
+else :
+    test(cfg)

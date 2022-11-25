@@ -9,6 +9,15 @@ import argparse
 import matplotlib.pyplot as plt
 import shutil 
 
+def name_changer(a):
+    if a == "VIFLoss":
+        a = "VIF"
+    elif a == "PSNR":
+        a = "RGB-PSNR"
+    elif a == "SSIM":
+        a = "RGB-SSIM"
+    return a
+
 def load_cfg_from_yaml(path):
     with open(path) as fh:
         cfg = yaml.load(fh, Loader=yaml.FullLoader)
@@ -99,7 +108,7 @@ def plot_all():
             val_no = Log_I['logs'][list(Log_I['cfgs'].keys())[0]][met_nam + "_test"][-1]
             val_no_bpp = Log_I['logs'][list(Log_I['cfgs'].keys())[0]]["bpp_loss_test"][-1]
             if cfg['general']['comment'] != "Identity_run":
-                print(met_nam,"metrics gain:", val_no - val_impr, "metrics base_value:",val_no, "metrics_preprocessed_value:", val_impr, "bpp_gain:",val_no_bpp - val_impr_bpp,"bpp_base_value:", val_no_bpp, "bpp_preprocessed_value:",val_impr_bpp, list(Log_I['cfgs'].keys())[0], key)
+                print(met_nam,"metric gain:", val_no - val_impr, "metric base_value:",val_no, "metric_preprocessed_value:", val_impr, "bpp_gain:",val_no_bpp - val_impr_bpp,"bpp_base_value:", val_no_bpp, "bpp_preprocessed_value:",val_impr_bpp, list(Log_I['cfgs'].keys())[0], key)
 
 
 def plot_RD_calc(pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec' :  "cheng2020_attn", "datalen_train" : 11000, "datalen_test" : 1500}}, \
@@ -164,7 +173,7 @@ def plot_RD_calc(pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml", 'codec
                 elif stat == 'min':
                     val_impr_bpp = log["bpp_loss" + ("_test" if test_flag else "")][min_arg]
     
-            print(met_nam, "metrics_preprocessed_value:", val_impr, "bpp_preprocessed_value:", val_impr_bpp, list(Log['cfgs'].keys())[0], key)
+            print(met_nam, "metric_preprocessed_value:", val_impr, "bpp_preprocessed_value:", val_impr_bpp, list(Log['cfgs'].keys())[0], key)
             nam = cfg['general']["comment"] + ("_Identity" if not "Identity" in cfg['general']['comment'] and cfg['general']['enhance_net'] == "No" else "")
     
             if not (cfg['general']["met_names"][0] in RD_curve):
@@ -238,6 +247,7 @@ def choose_patches(log_dir, filter_by_cfg, pattern, patches_names):
         break
 
     for idx, (met_nam, met_val) in enumerate(stats[nam].items()):
+        met_nam = name_changer(met_nam)
         met_info = f"{met_nam} : {met_val}"
         print(met_info)
         cv2.putText(img, met_info, (10, 30*(idx+1)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
@@ -283,7 +293,49 @@ def get_patch_stats():
     plot_RD_show(RD_curve, fig_nam = "jpeg_diff_patches.png")
     print(RD_curve) 
 
-def lineplot_datasetsz():
+def lineplot_datasetsz_pil(mode = 0):
+    """
+    mode 0 -- scatter
+    mode 1 -- bar 
+    """
+    import matplotlib.pyplot as plt
+    RD_curve_real_jpeg = plot_RD_calc(pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "jpeg_real_pil_post1" ,'codec' :  "jpeg_real_pil", "datalen_train" : 11000, "datalen_test" : 1500}}, \
+                pattern2 = {'general': {'cfg_dir' : "cfgs/default.yaml", "comment" : "jpeg_real_pil", "codec" : "jpeg_real_pil"}}, \
+                pattern = {'general' : {'comment' : "jpeg_real_pil_Identity", "datalen_train" : 11000, "datalen_test" : 1500 }}, param_cfg_key = "quality", stat = 'last', all_mets = True, test_flag = False)
+    print(RD_curve_real_jpeg)      
+    
+    return
+    datasetsz_vals = RD_curve_real_jpeg['loss_test']['jpeg_real_pil']['quality']
+    met_vals = RD_curve_real_jpeg['loss_test']['jpeg_real_pil']['met']
+
+    #datasetsz_vals= sorted(datasetsz_vals)
+    #met_vals= list(reversed(sorted(met_vals)))
+    #met_vals[-1] = met_vals[-1] + 0.0022
+    #met_vals[-1] = met_vals[-1] 
+    zipped = list(sorted(zip(datasetsz_vals, met_vals)))
+    datasetsz_vals, met_vals = zip(*zipped)
+    plt.xlabel("Dataset size")
+    plt.ylabel("DISTS")
+    if 0 and mode == 0:
+        plt.scatter(datasetsz_vals, met_vals)
+    else:
+        print(list(datasetsz_vals))
+        print(list(met_vals))
+        #plt.xticks(list(range(len(met_vals))), list(datasetsz_vals))
+        #plt.bar(list(range(len(met_vals))), list(met_vals))
+    #plt.title('DEMO(data in process of generaion)')
+    #th1 = plt.text(0,0, 'DEMO(data in process of generaion)', fontsize=50,
+    #           rotation=45, rotation_mode='anchor')
+    #plt.savefig(f"pil_tranforablity{mode}.png")
+    #plt.savefig(f"dataset_size_lineplot_jpeg{mode}.pgf")
+
+
+
+def lineplot_datasetsz(mode = 0):
+    """
+    mode 0 -- scatter
+    mode 1 -- bar 
+    """
     import matplotlib.pyplot as plt
     RD_curve_jpeg_patch = plot_RD_calc(pattern1 = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "dataset_size_lineplot_jpeg" ,'codec' :  "jpeg",}}, \
                 pattern2 = {'general': {'cfg_dir' : "cfgs/default.yaml", "comment" : "dataset_size_lineplot_jpeg", "codec" : "jpeg"}}, \
@@ -293,24 +345,29 @@ def lineplot_datasetsz():
     datasetsz_vals = RD_curve_jpeg_patch['loss_test']['dataset_size_lineplot_jpeg']['datalen_train']
     met_vals = RD_curve_jpeg_patch['loss_test']['dataset_size_lineplot_jpeg']['met']
 
-    datasetsz_vals= sorted(datasetsz_vals)
-    met_vals= list(reversed(sorted(met_vals)))
-    met_vals[-1] = met_vals[-1] + 0.0022
-    met_vals[-1] = met_vals[-1] 
-    
-    plt.scatter(datasetsz_vals, met_vals)
+    #datasetsz_vals= sorted(datasetsz_vals)
+    #met_vals= list(reversed(sorted(met_vals)))
+    #met_vals[-1] = met_vals[-1] + 0.0022
+    #met_vals[-1] = met_vals[-1] 
+    zipped = list(sorted(zip(datasetsz_vals, met_vals)))
+    datasetsz_vals, met_vals = zip(*zipped)
     plt.xlabel("Dataset size")
     plt.ylabel("DISTS")
-    plt.title('DEMO(data in process of generaion)')
+    if mode == 0:
+        plt.scatter(datasetsz_vals, met_vals)
+    else:
+        plt.xticks(list(range(len(met_vals))), list(datasetsz_vals))
+        plt.bar(list(range(len(met_vals))), list(met_vals))
+    #plt.title('DEMO(data in process of generaion)')
     #th1 = plt.text(0,0, 'DEMO(data in process of generaion)', fontsize=50,
     #           rotation=45, rotation_mode='anchor')
-
-    plt.savefig("dataset_size_lineplot_jpeg.png")
-    plt.savefig("dataset_size_lineplot_jpeg.pgf")
+    print(datasetsz_vals, met_vals)
+    plt.savefig(f"dataset_size_lineplot_jpeg{mode}.png")
+    plt.savefig(f"dataset_size_lineplot_jpeg{mode}.pgf")
 
 def get_box_violin_figure(out_nam = "box.png", box_or_violin = 0):
     """
-    Boxplot for each metrics at each quality.
+    Boxplot for each metric at each quality.
     """
     pass
     log_dir = "./log_patches/"
@@ -320,22 +377,24 @@ def get_box_violin_figure(out_nam = "box.png", box_or_violin = 0):
     Log_E = get_names(log_dir, filter_by_cfg, pattern_E, load_stats = True)
     Log_I = get_names(log_dir, filter_by_cfg, pattern_I, load_stats = True)
     Log = log_concat([Log_E, Log_I])
-    print(list(Log['stats'].values())[0].values())
+    #print(list(Log['stats'].values())[0].values())
     import matplotlib.pyplot as plt
     bitrate_dict = {j : i for i, j in enumerate([5, 10, 20, 40, 60])}
     met_dict = {j : i for i, j in enumerate(["LPIPS", "DISTS", "HaarPSI", "VIFLoss",])}
-    fig, axes = plt.subplots(len(bitrate_dict), 1, figsize=(20, 10))
+    #fig, axes = plt.subplots(len(bitrate_dict)//2+1, 2, figsize=(10, 10))    
+    fig, axes = plt.subplots(2, 3, figsize=(14, 10))    
     axes = axes.flatten()
-    fig.suptitle("Boxplot of metrics at different DiffJPEG qualities in percentage of original value")
+    axes[-1].set_visible(False)
+    #fig.suptitle("Boxplot of metric at different DiffJPEG qualities in percentage of original value")
     for idx, (stat, log, cfg, key) in enumerate(zip(Log['stats'].values(), Log['logs'].values(), Log['cfgs'].values(), Log['cfgs'].keys())):
-        if "Identity" in key or "NLPD" in key or "mse" in key:
+        if "Identity" in key or "NLPD" in key or "mse" in key or "PieAPP" in key:
             continue
         met_nam = cfg['general']['met_names'][0]
         nam = cfg['general']["comment"] + ("_Identity" if not "Identity" in cfg['general']['comment'] and cfg['general']['enhance_net'] == "No" else "")
         #print(key, nam, met_nam)
         target_loss = [i[met_nam] for i in stat.values()]
         PSNR = [i['PSNR'] for i in stat.values()]
-        SSIM = [i['SSIM'] for i in stat.values()]
+        SSIM = [1-i['SSIM'] for i in stat.values()]
 
         I_met = key + "_Identity"
         I_stat = Log['stats'][I_met]
@@ -343,7 +402,7 @@ def get_box_violin_figure(out_nam = "box.png", box_or_violin = 0):
         gains = (np.array(target_loss_I) - np.array(target_loss)) 
         scaling = "norm"
         if scaling == "norm":
-            gains = gains / np.array(target_loss_I)
+            gains = gains / np.array(target_loss_I) * 100
         if scaling == "100":
             gains = gains * 100
         bt_num = bitrate_dict[cfg['general']['quality']]
@@ -354,19 +413,28 @@ def get_box_violin_figure(out_nam = "box.png", box_or_violin = 0):
             axes[bt_num].boxplot(gains, positions=[met_num], showfliers=False)
         #axes[bt_num].set_xticks(met_dict.keys())
         #axes[bt_num].set_ylabel(cfg['general']['quality'])
-        
-        axes[bt_num].set_title("Bitrate: " + str(cfg['general']['quality']))
+        print("Quality: ", cfg['general']['quality'], "Met: ", met_nam, "Mean: ", np.mean(gains), "Std: ", np.std(gains), "Max: ", np.max(gains), "Min: ", np.min(gains), "Median: ", np.median(gains), "graterthan0: ", np.sum(gains > 0), "lessthan0: ", np.sum(gains < 0), "graterthan0percent: ", np.sum(gains > 0) / len(gains), "lessthan0percent: ", np.sum(gains < 0) / len(gains))
+        font_sz = 14
+        axes[bt_num].set_title("JPEG quality " + str(cfg['general']['quality']), fontsize=font_sz)
+        axes[bt_num].set(xlabel='Metric', ylabel='Gain, %')
 
-
+        axes[bt_num].tick_params(axis='x', labelsize=font_sz)
+        axes[bt_num].tick_params(axis='y', labelsize=font_sz)
         plt.sca(axes[bt_num])
-        plt.xticks(list(met_dict.values()), list(met_dict.keys()))
+        plt.xlabel('Metric', fontsize=font_sz)
+        plt.ylabel('Gain, %', fontsize=font_sz)
+        plt.rc('xtick', labelsize=font_sz) 
+        plt.rc('ytick', labelsize=font_sz) 
 
-        fig.supxlabel('Metrics')
-        fig.supylabel('Gain, %')
+        plt.xticks(list(met_dict.values()), list(map(name_changer,met_dict.keys())), fontsize=font_sz)
+        plt.tight_layout()
+        #fig.supxlabel('Metric')
+        #fig.supylabel('Gain, %')
         #plt.setp(axes,xticks = [0, 1, 2, 3], xlabels = list(met_dict.keys()) )
     
     plt.savefig(out_nam)
     plt.savefig(out_nam + ".pgf")
+    
 def get_patches_figure():
     """
     Get gain values, patches. Put gain values on patches
@@ -375,20 +443,20 @@ def get_patches_figure():
     pass
 def get_violin_plot_figure():
     """
-    Violinplot for each metrics at each quality.
+    Violinplot for each metric at each quality.
     """
     get_box_violin_figure(out_nam = "violin.png", box_or_violin = 0)
     
 def get_box_plot_figure():
     """
-    Boxplot for each metrics at each quality.
+    Boxplot for each metric at each quality.
     """
     get_box_violin_figure(out_nam = "box.png", box_or_violin = 1)
 
 
 def get_heatmap_figure(out_nam = "heatmap.png", box_or_violin = 0):
     """
-    Boxplot for each metrics at each quality.
+    Boxplot for each metric at each quality.
     """    
     log_dir = "./logs_hackingdetection/"
     pattern_E = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "hackingdetection_diffjpeg" ,'codec' :  "jpeg",}}
@@ -404,7 +472,7 @@ def get_heatmap_figure(out_nam = "heatmap.png", box_or_violin = 0):
     met_dict = {j : i for i, j in enumerate(["LPIPS", "DISTS", "HaarPSI", "VIFLoss",])}
     proxy_dict = {j : i for i, j in enumerate(["LPIPS", "DISTS", "HaarPSI", "VIFLoss", "PSNR", "SSIM", "NLPD", "PieAPP"])}
     heatmap = np.zeros((len(met_dict), len(proxy_dict)))
-    plt.figure(figsize=(15, 6))
+    fig = plt.figure(figsize=(15, 6))
     import seaborn as sns
 
     for idx, (stat, log, cfg, key) in enumerate(zip(Log['stats'].values(), Log['logs'].values(), Log['cfgs'].values(), Log['cfgs'].keys())):
@@ -430,7 +498,9 @@ def get_heatmap_figure(out_nam = "heatmap.png", box_or_violin = 0):
             if proxy_nam == "PSNR":
                 gains = -gains
             if scaling == "norm":
-                gains = gains / np.array(proxy_loss_I)
+                gains = gains / np.array(proxy_loss_I) * 100
+                #if proxy_nam == "SSIM":
+                    #print(f"gains:{np.mean(gains)} I:{np.mean(np.array(proxy_loss_I))} boosted:{np.mean(np.array(proxy_loss))}")
             if scaling == "100":
                 gains = gains * 100
             proxy_num = proxy_dict[proxy_nam]
@@ -443,27 +513,30 @@ def get_heatmap_figure(out_nam = "heatmap.png", box_or_violin = 0):
 
         #sns.heatmap(heatmap, annot=True, fmt=".1f", cmap="YlGnBu")
 
-        #fig.supxlabel('Metrics')
+        #fig.supxlabel('Metric')
         #fig.supylabel('Gain, %')
         #plt.setp(axes,xticks = [0, 1, 2, 3], xlabels = list(met_dict.keys()) )
-    plt.imshow(heatmap)
-    plt.yticks(list(met_dict.values()), list(met_dict.keys()))
-    plt.xticks(list(proxy_dict.values()), list(proxy_dict.keys()))
-    plt.xlabel("Detector metrics")
-    plt.ylabel("Target metrics")
-    plt.title("Hacking detection heatmap")
-    plt.colorbar(label = "gain")
-
+    font_sz = 14
+    plt.imshow(heatmap, cmap="YlGn")
+    plt.yticks(list(met_dict.values()), list(map(name_changer, met_dict.keys())), fontsize=font_sz)
+    plt.xticks(list(proxy_dict.values()), list(map(name_changer, proxy_dict.keys())), fontsize=font_sz)
+    plt.xlabel("Detector metric", fontsize=font_sz)
+    plt.ylabel("Target metric", fontsize=font_sz)
+    #plt.title("Hacking-detection heatmap", fontsize=font_sz)
+    cbar  = plt.colorbar(label = "Gain, %")
+    cbar.ay.set_title("Gain, %",fontsize=font_sz)
+    ticklabs = cbar.ax.get_yticklabels()
+    cbar.ax.tick_params(labelsize=font_sz)
     for i in range(heatmap.shape[0]):
         for j in range(heatmap.shape[1]):
             """precission 2 points"""
-            plt.text(j, i, "{:10.3f}".format(heatmap[i, j]), ha="center", va="center", color="w")
+            plt.text(j, i, "{:.1f}".format(heatmap[i, j]), ha="center", va="center", color="black", fontsize = 15)
+            #plt.text(j, i, "{:10.1f}".format(heatmap[i, j]), ha="center", va="center", color="b", fontsize = 9)
+            
     
     #cbar = plt.colorbar(shrink=0.5)
-    
+    plt.tight_layout()
     #cbar.ax.set_ylabel("gain, %", rotation=-90, va="bottom")
-
-
     #plt.tight_layout()
     plt.savefig(out_nam)
     plt.savefig(out_nam + ".pgf")
@@ -487,6 +560,7 @@ def get_ansable_barplot_figure():
 
 def choose_patches(log_dir, filter_by_cfg, pattern, patches_names):
     import cv2
+    font_sz = 14
     pattern = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "patches_diffjpeg" ,'codec' :  "jpeg",}}
     import pickle
    
@@ -506,7 +580,9 @@ def choose_patches(log_dir, filter_by_cfg, pattern, patches_names):
     for idx, (stat, log, cfg, key) in enumerate(zip(Log['stats'].values(), Log['logs'].values(), Log['cfgs'].values(), Log['cfgs'].keys())):
         met_nam = cfg['general']['met_names'][0]
         quality = cfg['general']['quality']
-       
+        
+        if  "PieAPP" in key:
+            continue
         if "Identity" in key:
             cfg['general']['quality'] = quality = f"Compressed {quality}"
         else:
@@ -528,31 +604,32 @@ def choose_patches(log_dir, filter_by_cfg, pattern, patches_names):
             met_val = stat_patch[met_nam]
 
             psnr_val = stat_patch["PSNR"]
-            ssim_val = stat_patch["SSIM"]
-
+            ssim_val = 1-stat_patch["SSIM"]
+            nam_x = ["GT", "Compressed with \nquality 10", "Compressed with \nquality 20", "Enhanced and \ncompressed with \nquality 10", "Enhanced and \ncompressed with \nquality 20"]
             img_dir = os.path.join(full_path, "imgs/out/", patch_nam)
             img = cv2.cvtColor(cv2.imread(img_dir), cv2.COLOR_BGR2RGB).astype(np.float32)
             print(met_names_dict[ met_nam], method_q_dict[quality])
             mat[met_names_dict[met_nam]*256 : met_names_dict[met_nam]*256+256 ,\
                  method_q_dict[quality]*256 : method_q_dict[ quality]*256+256] = img / 255.
-            met_info = "{} : {:.3f}\nPSNR : {:.3f}\nSSIM : {:.3f}".format(met_nam, met_val, psnr_val, ssim_val)
+            met_info = "{} : {:.3f}\nRGB-PSNR : {:.3f}\nRGB-SSIM : {:.3f}".format(name_changer(met_nam), met_val, psnr_val, ssim_val)
             notes[met_names_dict[met_nam]][ method_q_dict[quality]] = met_info
 
-    fig, ax = plt.subplots (figsize = (10, 10))
+    fig, ax = plt.subplots (figsize = (10, 8))
+
     
-    
-    plt.yticks(256/2 + np.array(list(met_names_dict.values()))*256, list(met_names_dict.keys()),)
-    plt.xticks(256/2 + np.array(list(method_q_dict.values()))*256, list(method_q_dict.keys()), fontsize = 8)
-    ax.set_xlabel("Quality")
-    ax.set_ylabel("Metrics")
+    plt.yticks(256/2 + np.array(list(met_names_dict.values()))*256, [name_changer(i) for i in list(met_names_dict.keys())], fontsize = font_sz)
+    plt.xticks(256/2 + np.array(list(method_q_dict.values()))*256, [name_changer(i) for i in nam_x], fontsize = font_sz-2)
+    #ax.set_xlabel("Quality", fontsize = font_sz)
+    ax.set_ylabel("Metric", fontsize = font_sz)
     ax.imshow(mat)
     for i in range(notes.shape[0]):
         for j in range(notes.shape[1]):
             ax.text(j*256 , i*256, notes[i, j], ha="left", color="w", size=10,va = "top")
     fig.savefig("patches.png")
 
-
+tmp = None
 def copy_patches(log_dir, filter_by_cfg, pattern, patches_names, out_path, gts = True):
+    global tmp
     pattern = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "patches_diffjpeg" ,'codec' :  "jpeg",}}
     import pickle
     import cv2
@@ -611,24 +688,26 @@ def copy_patches(log_dir, filter_by_cfg, pattern, patches_names, out_path, gts =
                 shutil.copy(os.path.join(full_path, "imgs/out/", patch_nam), os.path.join(out_path,out_subnam ,"enh.png"))
                 stat_patch_I = stats_I[patch_nam]
                 met_val_I = stat_patch_I[met_nam]
-                gain = met_val_I - met_val 
+                gain = (met_val_I - met_val)/met_val_I
                 print(met_nam, quality, patch_nam, gain)
                 #if met_nam == "HaarPSI" and quality == 20 and gain > 0:
                 Log_lst.append([met_nam, quality, patch_nam, gain])
             
             
             psnr_val = stat_patch["PSNR"]
-            ssim_val = stat_patch["SSIM"]
+            ssim_val = 1-stat_patch["SSIM"]
             
             
             img_dir = os.path.join(full_path, "imgs/out/", patch_nam)
-            img = cv2.cvtColor(cv2.imread(img_dir), cv2.COLOR_BGR2RGB).astype(np.float32)
+            #img = cv2.cvtColor(cv2.imread(img_dir), cv2.COLOR_BGR2RGB).astype(np.float32)
             #print(met_names_dict[ met_nam], method_q_dict[quality])
             met_info = "{} : {:.3f}\nPSNR : {:.3f}\nSSIM : {:.3f}".format(met_nam, met_val, psnr_val, ssim_val)
     
     Log_lst = np.array(Log_lst)
     np.sort(Log_lst, axis = 1)
     print(Log_lst)
+    tmp = Log_lst
+    #np.savetxt("log.npy", Log_lst)
 
 lst2 = ["154.png",\
             "156.png",\
@@ -774,6 +853,47 @@ b = ['228.png',\
 '241.png',\
 '233.png',\
 '611.png',]
+subj_sent = ['154',
+ '155',
+ '156',
+ '157',
+ '158',
+ '160',
+ '161',
+ '162',
+ '165',
+ '166',
+ '167',
+ '168',
+ '170',
+ '181',
+ '192',
+ '204',
+ '218',
+ '228',
+ '231',
+ '242',
+ '246',
+ '249',
+ '252',
+ '270',
+ '336',
+ '370',
+ '425',
+ '433',
+ '436',
+ '443',
+ '472',
+ '513',
+ '515',
+ '531',
+ '571',
+ '604',
+ '613',
+ '635',
+ '641',
+ '645']
+subj_sent = [i+".png" for i in subj_sent]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='VQM hacking')
@@ -790,12 +910,15 @@ if __name__ == "__main__":
     elif args.mode == 4:
         get_heatmap_figure()
     elif args.mode == 5:
-        choose_patches("./log_patches/", filter_by_cfg, None,lst)#["158.png"]
+        choose_patches("./log_patches/", filter_by_cfg, None,["158.png"])#
     elif args.mode == 6:
         lst = list(set(lst))
         pathes_path = "./log_patches/patches_jpeg_5_HaarPSI/imgs/enh/"
         p1 = os.listdir(pathes_path)
-        
-        copy_patches("./log_patches/", filter_by_cfg, None,["634.png", "613.png"], "./subjectify_patches_false_true/",gts  = True)
+        copy_patches("./log_patches/", filter_by_cfg, None,subj_sent, "./subjectify_patches_sent/",gts  = True)
     elif args.mode == 7:
         print(len(lst2))
+    elif args.mode == 8:
+        lineplot_datasetsz(1)
+    elif args.mode == 9:
+        lineplot_datasetsz_pil()

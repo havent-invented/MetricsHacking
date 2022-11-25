@@ -74,6 +74,7 @@ def train(cfg):
         cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg["general"]["k_lst"]).eval().requires_grad_(False).to(cfg["run"]["device"])
     rdLoss = RateDistortionLoss()
     
+    to_show = True
     if 0:
         torch.nn.parallel.DistributedDataParallel
         cfg["run"]["loss_calc"] = torch.nn.DataParallel(cfg["run"]["loss_calc"])
@@ -310,14 +311,16 @@ def train(cfg):
                 pickle.dump(logs_plot, f)
         
         tqdm_dataset.refresh()
-        plt.show()
+        if to_show:
+            plt.show()
         plt.figure(25)
         #X.data = X_sample.data
         #X_out = net_codec.forward(X)
         pltimshow_batch([Y, (X_enhance if (not "order_pre_post" in cfg['general'] or cfg['general']['order_pre_post'] == 0) else X_codec['x_hat']) , X_out['x_hat']], filename = os.path.join(cfg["general"]["logs_dir"], cfg["general"]["name"], "vis.png"))
         if cfg["general"]["use_wandb"]:
             wandb.log({"Enhanced": wandb.Image((X_enhance if (not "order_pre_post" in cfg['general'] or cfg['general']['order_pre_post'] == 0) else X_codec['x_hat'])), "Enhanced + Compressed": wandb.Image(X_out['x_hat']),  "GT": wandb.Image(Y)}, step = epoch)
-        plt.pause(0.005)
+        if to_show:
+            plt.pause(0.005)
             
         if cfg["run"]["EarlyStopping"](logs_plot["loss_test"][-1]):
             break

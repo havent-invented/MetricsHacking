@@ -14,7 +14,7 @@ general:
   break_flag: 0
   center_crop: 0
   codec: cheng2020_attn
-  dataset_dir: '/home/sinyukov.m/project/datasets/vimeo_triplet_dataset/vimeo_triplet/sequences/'
+  dataset_dir: 'P:/vimeo_triplet/sequences/'
   dataset_type: img
   od_vgan_model_path: "../OD_VGAN/model_zoo/model_H264n_1step_vimeo90kIframe_noisntancenorm_deletedallnorm_jpegp3_d.ckpt"
   enhance: 1

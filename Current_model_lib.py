@@ -889,6 +889,7 @@ def pltimshow_batch(args, filename = "vis/tmp.png"):
             Ar2 = Ar1
         else:
             Ar2 = np.concatenate([Ar2,Ar1],1)
+    
     plt.imshow(Ar2)
     plt.axis('off')
     plt.savefig(filename, bbox_inches='tight')

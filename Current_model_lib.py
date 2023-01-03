@@ -42,6 +42,10 @@ from torchvision.transforms.functional import resize, to_tensor, normalize
 #from VQAmodel import VQAModel
 import torch.optim as optim
 import os
+from fr_models import AHIQ, CKDN, CKDNr, STLPIPS, WADIQAM, IQT
+from fr_models import VTAMIQ, twoStepQA, CONITRIQUE,WResNet, MRperceptual
+from fr_models import IQATransformerBNS, IQAConformerBNS 
+
 try:
     cfg
 except Exception:
@@ -670,7 +674,7 @@ class RateDistortionLoss(nn.Module):
         except Exception:
             pass
         return out
-
+# DSS, SRSIM
 class Custom_enh_Loss(nn.Module):
     def __init__(self, lmbda=1e-2, device = cfg["run"]["device"], target_lst = ["VSFA", "mse"], k_lst = [1, 2000.], to_train = True, crop_NIMA = True, to_crop_koniq = False):
         super().__init__()
@@ -705,7 +709,7 @@ class Custom_enh_Loss(nn.Module):
         if "KONIQ" in self.target_lst:
             self.koniq_loss = koniq(to_train = to_train, to_crop = to_crop_koniq)
         #Full-ref
-        from piq import HaarPSILoss,VIFLoss, DSSLoss,dss, multi_scale_ssim, multi_scale_gmsd,vif, vif_p,MDSILoss, GMSDLoss,VSILoss,SRSIMLoss
+        from piq import HaarPSILoss,VIFLoss, DSSLoss,dss, multi_scale_ssim, multi_scale_gmsd,vif, vif_p,MDSILoss, GMSDLoss,VSILoss,SRSIMLoss, InformationWeightedSSIMLoss
         from IQA_pytorch import GMSD, VIF, VIFs, MS_SSIM
         from piq import DISTS as piq_DISTS
         from piq import LPIPS as piq_LPIPS
@@ -734,7 +738,7 @@ class Custom_enh_Loss(nn.Module):
         if "MS-SSIM" in self.target_lst:
             self.msssim_loss_2 = MS_SSIM()
         if "MS-GMSD" in self.target_lst:
-            self.ms_gmsd_loss = multi_scale_gmsd
+            self.ms_gmsd_loss = MultiScaleGMSDLoss()#multi_scale_gmsd
         if "SRSIM" in self.target_lst:
             self.SRSIM_loss = SRSIMLoss()
         if "VSI" in self.target_lst:
@@ -755,7 +759,60 @@ class Custom_enh_Loss(nn.Module):
             self.NLPD = IQA_pytorch.NLPD()
         if "ContentLoss" in self.target_lst:
             self.ContentLoss = piq.ContentLoss()
-        
+
+        if "AHIQ" in self.target_lst:
+            self.AHIQ = AHIQ()
+        if "CKDN" in self.target_lst:
+            self.CKDN = CKDN()
+        if "CKDNr" in self.target_lst:
+            self.CKDNr = CKDNr()
+        if "STLPIPS" in self.target_lst:
+            self.STLPIPS = STLPIPS()
+        if "WADIQAM" in self.target_lst:
+            self.WADIQAM = WADIQAM()
+        if "IQT" in self.target_lst:
+            self.IQT = IQT()
+        if "VTAMIQ" in self.target_lst:
+            self.VTAMIQ = VTAMIQ()
+        if "twoStepQA" in self.target_lst:
+            self.twoStepQA = twoStepQA()
+        if "CONITRIQUE" in self.target_lst: 
+            self.CONITRIQUE = CONITRIQUE()
+        if "WResNet" in self.target_lst:
+            self.WResNet = WResNet()
+        if "MRperceptual" in self.target_lst:
+            self.MRperceptual = MRperceptual()
+        if "IQAConformerBNS" in self.target_lst:
+            self.IQAConformerBNS = IQAConformerBNS()
+        if "IQATransformerBNS" in self.target_lst:
+            self.IQATransformerBNS = IQATransformerBNS()
+        if "DISTScrops1" in self.target_lst:
+            from fr_models import DISTScrops
+            self.dists_crops1 = DISTScrops(device = "cuda:0", mode = 'mrpl', crop_sz = 192, crops_num = 1).to(device)
+        if "DISTScrops2" in self.target_lst:
+            from fr_models import DISTScrops
+            self.dists_crops2 = DISTScrops(device = "cuda:0", mode = 'mrpl', crop_sz = 32, crops_num = 64).to(device)
+        if "IW-SSIM" in self.target_lst:
+            self.iwssim = InformationWeightedSSIMLoss()   
+        if "CW-SSIM" in self.target_lst:
+            #from pyiqa.archs import CW_SSIM
+            from pyiqa.archs.ssim_arch import CW_SSIM
+            self.cw_ssim = CW_SSIM()
+        if "MAD" in self.target_lst:
+            from pyiqa.archs.mad_arch import MAD
+            self.mad_loss = MAD()
+        if "ADISTS" in self.target_lst:
+            from ADISTS.ADISTS_pt import ADISTS
+            self.adists = ADISTS().to(device)
+        if "MACS" in self.target_lst:
+            #from MACS.siamunet_diff import SiamUnet_diff
+            from MACS.siamunet_conc import SiamUnet_conc
+            self.macs = SiamUnet_conc(3, 1)
+
+            self.macs.load_state_dict(torch.load("MACS/ch_net-best_epoch-129.pth.tar")['model_state_dict'])
+            self.macs = self.macs.to(device).eval()
+            
+
     def forward(self, X_out, Y):
         if X_out['x_hat'].device != Y.device:
             X_out['x_hat'] = X_out['x_hat'].to(Y.device)
@@ -792,7 +849,10 @@ class Custom_enh_Loss(nn.Module):
             self.loss["KONIQ"] = -self.koniq_loss(X_out['x_hat'])
         #Full-ref    
         if "GMSD" in self.target_lst:
-            self.loss["GMSD"] = self.GMSD_loss(X_out['x_hat'], Y)
+            self.GMSD_loss.train()
+            X1 = torch.minimum(torch.maximum(X_out['x_hat'], torch.zeros_like(X_out['x_hat'], device = X_out['x_hat'].device)), torch.ones_like(X_out['x_hat'], device = X_out['x_hat'].device))
+            Y1 = torch.minimum(torch.maximum(Y, torch.zeros_like(Y, device = Y.device)), torch.ones_like(Y, device = Y.device))
+            self.loss["GMSD"] = self.GMSD_loss(X1, Y1)
         if "GMSD1" in self.target_lst:
             self.loss["GMSD1"] = self.GMSD_loss_1(X_out['x_hat'], Y)
         if "VIFs" in self.target_lst:
@@ -804,7 +864,9 @@ class Custom_enh_Loss(nn.Module):
         if "VIFp" in self.target_lst:
             self.loss["VIFp"] = 1 - self.piq_vif_p_loss(X_out['x_hat'], Y)#higher -- better
         if "DSS" in self.target_lst: 
-            self.loss["DSS"] = self.dss_loss_1(X_out['x_hat'], Y)
+            X1 = torch.minimum(torch.maximum(X_out['x_hat'], torch.zeros_like(X_out['x_hat'], device = X_out['x_hat'].device)), torch.ones_like(X_out['x_hat'], device = X_out['x_hat'].device))
+            Y1 = torch.minimum(torch.maximum(Y, torch.zeros_like(Y, device = Y.device)), torch.ones_like(Y, device = Y.device))
+            self.loss["DSS"] = self.dss_loss_1(X1,Y1)
         if "DSS1" in self.target_lst: 
             self.loss["DSS1"] =  1 - self.dss_loss_2(X_out['x_hat'], Y)#higher -- better
         if "MS-SSIM1" in self.target_lst: 
@@ -835,6 +897,49 @@ class Custom_enh_Loss(nn.Module):
             self.loss["NLPD"] = self.NLPD(X_out['x_hat'], Y)    
         if "ContentLoss" in self.target_lst:
             self.loss["ContentLoss"] = self.ContentLoss(X_out['x_hat'], Y) 
+    
+        if "AHIQ" in self.target_lst:
+            self.loss["AHIQ"] = self.AHIQ(X_out['x_hat'], Y)
+        if "CKDN" in self.target_lst:
+            self.loss["CKDN"] = self.CKDN(X_out['x_hat'], Y)
+        if "CKDNr" in self.target_lst:
+            self.loss["CKDNr"] = self.CKDNr(X_out['x_hat'], Y)
+        if "STLPIPS" in self.target_lst:
+            self.loss["STLPIPS"] = self.STLPIPS(X_out['x_hat'], Y)
+        if "WADIQAM" in self.target_lst:
+            self.loss["WADIQAM"] = self.WADIQAM(X_out['x_hat'], Y)
+        if "IQT" in self.target_lst:
+            self.loss["IQT"] = self.IQT(X_out['x_hat'], Y)
+        if "VTAMIQ" in self.target_lst:
+            self.loss["VTAMIQ"] = self.VTAMIQ(X_out['x_hat'], Y)
+        if "twoStepQA" in self.target_lst:
+            self.loss["twoStepQA"] = self.twoStepQA(X_out['x_hat'], Y)
+        if "CONITRIQUE" in self.target_lst:
+            self.loss["CONITRIQUE"] = self.CONITRIQUE(X_out['x_hat'], Y)
+        if "WResNet" in self.target_lst:
+            self.loss["WResNet"] = self.WResNet(X_out['x_hat'], Y)
+        if "MRperceptual" in self.target_lst:
+            self.loss["MRperceptual"] = self.MRperceptual(X_out['x_hat'], Y)
+        if "IQAConformerBNS" in self.target_lst:
+            self.loss["IQAConformerBNS"] = self.IQAConformerBNS(X_out['x_hat'], Y)
+        if "IQATransformerBNS" in self.target_lst:
+            self.loss["IQATransformerBNS"] = self.IQATransformerBNS(X_out['x_hat'], Y)
+        if "DISTScrops1" in self.target_lst:
+            self.loss["DISTScrops1"] = self.dists_crops1(X_out['x_hat'], Y)
+        if "DISTScrops2" in self.target_lst:
+            self.loss["DISTScrops2"] = self.dists_crops2(X_out['x_hat'], Y)  
+        if "IW-SSIM" in self.target_lst:
+            Yc = torch.minimum(torch.maximum(Y, torch.zeros_like(Y, device = Y.device)), torch.ones_like(Y, device = Y.device))
+            Xc = torch.minimum(torch.maximum(X_out['x_hat'], torch.zeros_like(X_out['x_hat'], device = X_out['x_hat'].device)), torch.ones_like(X_out['x_hat'], device = X_out['x_hat'].device))
+            self.loss["IW-SSIM"] = self.iwssim(Xc, Yc)
+        if "CW-SSIM" in self.target_lst:
+            self.loss["CW-SSIM"] = torch.mean(1-self.cw_ssim(X_out['x_hat'], Y))
+        if "MAD" in self.target_lst:
+            self.loss["MAD"] = self.mad_loss(X_out['x_hat'], Y)
+        if "ADISTS" in self.target_lst:
+            self.loss["ADISTS"] = torch.mean(self.adists(X_out['x_hat'], Y))
+        if "MACS" in self.target_lst:#not working
+            self.loss["MACS"] = torch.mean(self.macs(X_out['x_hat'], Y))
         self.loss["loss"] = 0
         for cur_metrics, k in zip(self.target_lst, self.k_lst):
             self.loss["loss"] += k * self.loss[cur_metrics]
@@ -993,3 +1098,5 @@ def get_met(X):
         return -cfg["run"]["loss_calc"]({"x_hat": torch.cat([X,X])}, torch.cat([X,X]))["loss"]
     else:
         return -cfg["run"]["loss_calc"]({"x_hat": X}, X)["loss"]
+
+from piq import  MultiScaleSSIMLoss, MultiScaleGMSDLoss, GMSDLoss, FSIMLoss, VSILoss, MDSILoss, SRSIMLoss, DSSLoss, InformationWeightedSSIMLoss

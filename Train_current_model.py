@@ -1,5 +1,7 @@
 import sys
 from Current_model_lib import *
+import matplotlib
+matplotlib.use('Agg', force=True)#QtAgg
 
 def train(cfg):
     if cfg["general"]["use_wandb"]:
@@ -12,7 +14,7 @@ def train(cfg):
 
     
     X = None
-    cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg ["general"] ["k_lst"]).eval().requires_grad_(True).to(cfg["run"]["device"])
+    cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg ["general"] ["k_lst"]).eval().requires_grad_(False).to(cfg["run"]["device"])
     if cfg["general"]["enhance_net"] == "Resnet18Unet":
         cfg["run"]["net_enhance"] = ResNetUNet(3).to(cfg["run"]["device"]) 
         #cfg["run"]["net_enhance"] = nn.Sequential(nn.Conv2d(3, 3, 3,1, "same"),)
@@ -72,6 +74,7 @@ def train(cfg):
     
     if cfg["run"]["loss_calc"] == None:
         cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg["general"]["k_lst"]).eval().requires_grad_(False).to(cfg["run"]["device"])
+        #cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg["general"]["k_lst"]).train().requires_grad_(False).to(cfg["run"]["device"])
     rdLoss = RateDistortionLoss()
     
     to_show = True
@@ -198,8 +201,8 @@ def train(cfg):
                         X = frame.to(cfg["run"]["device"]).requires_grad_()
                         X.retain_grad()
                         #X = torchvision.transforms.RandomResizedCrop((patch_sz,patch_sz))(X)
-                        Y = X.clone().detach().to(cfg["run"]["device"]).requires_grad_()
-                        Y.retain_grad()
+                        Y = X.clone().detach().to(cfg["run"]["device"]).requires_grad_(False)
+                        #Y.retain_grad()
                     #X.data.clamp_(min=0,max=1)
                     cfg["run"]["optimizer"].zero_grad()
                     #aux_optimizer.zero_grad()

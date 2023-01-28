@@ -370,17 +370,24 @@ def get_box_violin_figure(out_nam = "box.png", box_or_violin = 0):
     Boxplot for each metric at each quality.
     """
     pass
-    log_dir = "./log_patches/"
-    pattern_E = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "patches_diffjpeg" ,'codec' :  "jpeg",}}
-    pattern_I = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "patches_diffjpeg_Identity" ,'codec' :  "jpeg",}}
-
+    #log_dir = "./log_patches/"
+    #pattern_E = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "patches_diffjpeg" ,'codec' :  "jpeg",}}
+    #pattern_I = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "patches_diffjpeg_Identity" ,'codec' :  "jpeg",}}
+    log_dir = "./logs/"
+    pattern_E = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "tmp_jpegnewFR" ,'codec' :  "jpeg",}}
+    pattern_I = {'general': {'cfg_dir' : "cfgs/default.yaml","comment" : "tmp_jpegnewFR_Identity" ,'codec' :  "jpeg",}}
+    
+    
     Log_E = get_names(log_dir, filter_by_cfg, pattern_E, load_stats = True)
     Log_I = get_names(log_dir, filter_by_cfg, pattern_I, load_stats = True)
     Log = log_concat([Log_E, Log_I])
     #print(list(Log['stats'].values())[0].values())
     import matplotlib.pyplot as plt
     bitrate_dict = {j : i for i, j in enumerate([5, 10, 20, 40, 60])}
-    met_dict = {j : i for i, j in enumerate(["LPIPS", "DISTS", "HaarPSI", "VIFLoss",])}
+    print(Log)
+    #met_dict = {j : i for i, j in enumerate(["LPIPS", "DISTS", "HaarPSI", "VIFLoss",])}
+    met_dict = {j : i for i, j in enumerate(["WResNet", "WADIQAM", "VTAMIQ", "twoStepQA","STLPIPS", "MRperceptual","IQT","IQATransformerBNS", \
+        "CONITRIQUE", "CKDN", "CKDNr", "AHIQ", ])}
     #fig, axes = plt.subplots(len(bitrate_dict)//2+1, 2, figsize=(10, 10))    
     fig, axes = plt.subplots(2, 3, figsize=(14, 10))    
     axes = axes.flatten()

@@ -15,28 +15,11 @@ def train(cfg):
     
     X = None
     cfg["run"]["loss_calc"] = Custom_enh_Loss(target_lst = cfg["general"]["met_names"], k_lst = cfg ["general"] ["k_lst"]).eval().requires_grad_(False).to(cfg["run"]["device"])
-    if cfg["general"]["enhance_net"] == "Resnet18Unet":
-        cfg["run"]["net_enhance"] = ResNetUNet(3).to(cfg["run"]["device"]) 
-        #cfg["run"]["net_enhance"] = nn.Sequential(nn.Conv2d(3, 3, 3,1, "same"),)
-        cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"]).requires_grad_(True)
-        for i in cfg["run"]["net_enhance"].parameters():
-                i.retain_grad()
-    elif cfg["general"]["enhance_net"] == "smallnet":
-            cfg["run"]["net_enhance"] = smallnet().to(cfg["run"]["device"])
-            cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"]).requires_grad_(True)
-            for i in cfg["run"]["net_enhance"].parameters():
-                i.retain_grad()
-    elif cfg["general"]["enhance_net"] == "smallnet_skips":
-            cfg["run"]["net_enhance"] = smallnet_skips().to(cfg["run"]["device"])
-            cfg["run"]["net_enhance"] = cfg["run"]["net_enhance"].to(cfg["run"]["device"]).requires_grad_(True)
-            for i in cfg["run"]["net_enhance"].parameters():
-                i.retain_grad()
-    elif cfg["general"]["enhance_net"] == "No" or cfg["general"]["enhance_net"] == "Identity": 
-        cfg["run"]["net_enhance"] = enhance_Identity
-    elif cfg["general"]["enhance_net"] == "mobile_deepest_resnet24":
-        sys.path.append(os.path.join(cfg['general']['project_dir'], "OMGD"))
-        cfg["run"]["net_enhance"] = torch.load(os.path.join(cfg['general']['project_dir'], "OMGD/m24.ckpt")).to(cfg["run"]["device"]).requires_grad_(True)
-    
+   
+    from enh_models import get_enh_model
+    cfg["run"]["net_enhance"] = get_enh_model(cfg["general"]["enhance_net"], cfg)
+
+
     if "pretrained_model_path" in cfg["general"]:
         ckpt = torch.load(cfg["general"]['pretrained_model_path'])['model']
         cfg["run"]["net_enhance"].load_state_dict(ckpt)
@@ -208,9 +191,20 @@ def train(cfg):
                     #aux_optimizer.zero_grad()
                     if not "order_pre_post" in cfg['general'] or cfg['general']['order_pre_post'] == 0:
                         X_enhance = cfg["run"]["net_enhance"](X)
-                        if cfg["general"]["sigmoid_activation"] == True: 
+                        if cfg["general"]["enhance_net"] == "GAPresnet" or \
+                            cfg["general"]["enhance_net"] == "GAPunet":
+                            X_enhance = X_enhance + X
+                        elif cfg["general"]["sigmoid_activation"] == 0:#Fails for default
+                            pass
+                        elif cfg["general"]["sigmoid_activation"] == 1: #Fine for default, bit better than 2
                             X_enhance = torch.sigmoid(X_enhance)
+                        elif cfg["general"]["sigmoid_activation"] == 2:#Fine for default
+                            X_enhance = torch.tanh(X_enhance) + X
+                        elif cfg["general"]["sigmoid_activation"] == 3:#Fails for default
+                            X_enhance = X_enhance + X
                         X_enhance.data.clamp_(min=0,max=1)
+                        #X_enhance = torch.maximum(X_enhance, torch.zeros_like(X_enhance).to(cfg["run"]["device"]))
+                        #X_enhance = torch.minimum(X_enhance, torch.ones_like(X_enhance).to(cfg["run"]["device"]))
                         X_out = cfg["run"]["net_codec"].forward(X_enhance)
                         
                         X_out['x_hat'].data.clamp_(min=0,max=1)
@@ -223,8 +217,15 @@ def train(cfg):
                         X_codec['x_hat'].data.clamp_(min=0,max=1)
                         X_out["x_hat"] = cfg["run"]["net_enhance"](X_codec["x_hat"])
                         #X_enhance = torch.sigmoid(X_enhance)
-                        if cfg["general"]["sigmoid_activation"] == True:            
+                        if cfg["general"]["sigmoid_activation"] == 0:
+                            pass
+                        elif cfg["general"]["sigmoid_activation"] == 1:            
                             X_out["x_hat"] = torch.sigmoid(X_out["x_hat"])
+                        elif cfg["general"]["sigmoid_activation"] == 2:
+                            X_out["x_hat"] = torch.tanh(X_out["x_hat"]) + X_codec["x_hat"]
+                        elif cfg["general"]["sigmoid_activation"] == 3:
+                            X_out["x_hat"] = X_out["x_hat"] + X_codec["x_hat"]
+                        
                         if "bpp_loss" in X_codec.keys():
                             X_out['bpp_loss'] = X_codec['bpp_loss']
                         
